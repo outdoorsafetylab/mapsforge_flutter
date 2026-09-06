@@ -41,17 +41,19 @@ class RenderthemeStyleMenu {
   /// Returns the categories rendered for the style [styleId].
   ///
   /// These are the categories of the layer itself (including those inherited
-  /// from its `parent`) plus the categories of its overlays. An overlay
-  /// contributes when it is listed in [enabledOverlays], or - if that argument
-  /// is null - when the theme declares it `enabled="true"`.
+  /// from its `parent`) plus the categories of its enabled overlays. An overlay
+  /// is enabled when the theme declares it `enabled="true"`; [enabledOverlays]
+  /// and [disabledOverlays] (overlay layer ids) switch individual overlays on
+  /// or off in addition to that default, e.g. from a user's style settings.
+  /// [disabledOverlays] wins over [enabledOverlays].
   ///
   /// Returns null if [styleId] does not name a layer of this menu.
-  Set<String>? categoriesFor(String styleId, {Set<String>? enabledOverlays}) {
+  Set<String>? categoriesFor(String styleId, {Set<String> enabledOverlays = const {}, Set<String> disabledOverlays = const {}}) {
     RenderthemeStyleLayer? layer = _layers[styleId];
     if (layer == null) return null;
     Set<String> result = {...layer.categories};
     for (RenderthemeStyleLayer overlay in layer.overlays) {
-      bool enabled = enabledOverlays?.contains(overlay.id) ?? overlay.enabled;
+      bool enabled = (overlay.enabled || enabledOverlays.contains(overlay.id)) && !disabledOverlays.contains(overlay.id);
       if (enabled) result.addAll(overlay.categories);
     }
     return result;

@@ -87,8 +87,11 @@ class RenderThemeBuilder {
   /// The style to select from the theme's `<stylemenu>`; null selects the menu's `defaultvalue`.
   final String? styleId;
 
-  /// Overlays of the selected style to switch on; null uses the `enabled` attribute of each overlay.
-  final Set<String>? enabledOverlays;
+  /// Overlay ids of the selected style to switch on in addition to those the theme marks `enabled="true"`.
+  final Set<String> enabledOverlays;
+
+  /// Overlay ids of the selected style to switch off although the theme marks them `enabled="true"`.
+  final Set<String> disabledOverlays;
 
   /// The parsed `<stylemenu>`, null if the theme has none.
   RenderthemeStyleMenu? styleMenu;
@@ -99,7 +102,7 @@ class RenderThemeBuilder {
   /// Private constructor for creating builder instances.
   ///
   /// [excludeIds] Optional set of element IDs to exclude from rendering
-  RenderThemeBuilder._({this.excludeIds = const {}, this.styleId, this.enabledOverlays});
+  RenderThemeBuilder._({this.excludeIds = const {}, this.styleId, this.enabledOverlays = const {}, this.disabledOverlays = const {}});
 
   /// Creates a RenderTheme from XML content string.
   ///
@@ -111,12 +114,13 @@ class RenderThemeBuilder {
   /// [styleId] The style (a `<layer>` id) to select from the theme's `<stylemenu>`. Defaults to the
   /// menu's `defaultvalue`. Rules whose `cat` is not enabled by the style are not loaded. Ignored if
   /// the theme has no style menu.
-  /// [enabledOverlays] Overlays of the selected style to switch on. Defaults to the overlays the theme
-  /// marks `enabled="true"`.
+  /// [enabledOverlays] Ids of overlays (`<overlay id=...>` layers) of the selected style to switch on
+  /// in addition to those the theme marks `enabled="true"`.
+  /// [disabledOverlays] Ids of overlays to switch off although the theme marks them `enabled="true"`.
   /// Returns the parsed RenderTheme
   /// Throws FormatException if XML parsing fails
-  static Rendertheme createFromString(String content, {Set<String> excludeIds = const {}, String? styleId, Set<String>? enabledOverlays}) {
-    RenderThemeBuilder renderThemeBuilder = RenderThemeBuilder._(excludeIds: excludeIds, styleId: styleId, enabledOverlays: enabledOverlays);
+  static Rendertheme createFromString(String content, {Set<String> excludeIds = const {}, String? styleId, Set<String> enabledOverlays = const {}, Set<String> disabledOverlays = const {}}) {
+    RenderThemeBuilder renderThemeBuilder = RenderThemeBuilder._(excludeIds: excludeIds, styleId: styleId, enabledOverlays: enabledOverlays, disabledOverlays: disabledOverlays);
     renderThemeBuilder._parseXml(content);
     renderThemeBuilder.forHash =
         "${MapsforgeSettingsMgr().getUserScaleFactor()}_${MapsforgeSettingsMgr().getFontScaleFactor()}_${MapsforgeSettingsMgr().tileSize}";
@@ -126,11 +130,17 @@ class RenderThemeBuilder {
   /// Builds and returns a rendertheme by loading a rendertheme file. This
   /// is a convienience-function. If desired we can also implement some caching
   /// so that we do not need to parse the same file over and over again.
-  static Future<Rendertheme> createFromFile(String filename, {Set<String> excludeIds = const {}, String? styleId, Set<String>? enabledOverlays}) async {
+  static Future<Rendertheme> createFromFile(
+    String filename, {
+    Set<String> excludeIds = const {},
+    String? styleId,
+    Set<String> enabledOverlays = const {},
+    Set<String> disabledOverlays = const {},
+  }) async {
     File file = File(filename);
     List<int> bytes = await file.readAsBytes();
     String content = const Utf8Decoder().convert(bytes);
-    return RenderThemeBuilder.createFromString(content, excludeIds: excludeIds, styleId: styleId, enabledOverlays: enabledOverlays);
+    return RenderThemeBuilder.createFromString(content, excludeIds: excludeIds, styleId: styleId, enabledOverlays: enabledOverlays, disabledOverlays: disabledOverlays);
   }
 
   /// @return a new {@code RenderTheme} instance.
@@ -252,7 +262,7 @@ class RenderThemeBuilder {
         if (styleMenu != null) throw Exception("More than one stylemenu");
         styleMenu = RenderthemeStyleMenu.parse(element);
         String style = styleId ?? styleMenu!.defaultValue;
-        categories = styleMenu!.categoriesFor(style, enabledOverlays: enabledOverlays);
+        categories = styleMenu!.categoriesFor(style, enabledOverlays: enabledOverlays, disabledOverlays: disabledOverlays);
         if (categories == null) throw Exception("Style $style is not a layer of stylemenu ${styleMenu!.id}");
       }
     }

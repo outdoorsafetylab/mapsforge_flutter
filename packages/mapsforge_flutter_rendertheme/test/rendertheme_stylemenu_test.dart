@@ -139,7 +139,9 @@ $footer''');
       expect(hiking.getTitle("de", styleMenu), "Wandern");
       expect(hiking.getTitle("fr", styleMenu), "Hiking");
       expect(styleMenu.categoriesFor("hiking"), {"water", "hike", "contour"});
-      expect(styleMenu.categoriesFor("hiking", enabledOverlays: {"borders"}), {"water", "hike", "border"});
+      expect(styleMenu.categoriesFor("hiking", enabledOverlays: {"borders"}), {"water", "hike", "contour", "border"}, reason: "adds to the theme default");
+      expect(styleMenu.categoriesFor("hiking", disabledOverlays: {"contours"}), {"water", "hike"});
+      expect(styleMenu.categoriesFor("hiking", enabledOverlays: {"contours"}, disabledOverlays: {"contours"}), {"water", "hike"}, reason: "disabled wins");
       expect(styleMenu.categoriesFor("nosuchstyle"), isNull);
     });
 
