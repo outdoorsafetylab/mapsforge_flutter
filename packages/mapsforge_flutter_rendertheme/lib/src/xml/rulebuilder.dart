@@ -310,6 +310,9 @@ class RuleBuilder {
         _log.info("Excluding rule with id: $ruleId");
         return; // Skip parsing this rule entirely.
       }
+      if (!renderThemeBuilder.isVisibleRule(rootElement.getAttribute(CAT))) {
+        return; // The category is switched off in the selected style.
+      }
       checkState(qName, XmlElementType.RULE);
       RuleBuilder ruleBuilder = RuleBuilder(renderThemeBuilder, excludeIds: excludeIds);
       ruleBuilder.zoomlevelRange = zoomlevelRange;
@@ -462,13 +465,6 @@ class RuleBuilder {
   bool isVisibleWay(RenderinstructionWay renderInstructionWay) {
     return true;
     //return this.categories == null || renderInstruction.getCategory() == null || this.categories.contains(renderInstruction.getCategory());
-  }
-
-  bool isVisibleRule(Rule rule) {
-    // a rule is visible if categories is not set, the rule has not category or the
-    // categories contain this rule's category
-    return true;
-    //return this.categories == null || rule.cat == null || this.categories.contains(rule.cat);
   }
 
   int getNextLevel() {

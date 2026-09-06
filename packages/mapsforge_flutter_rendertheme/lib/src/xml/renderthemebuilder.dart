@@ -84,10 +84,22 @@ class RenderThemeBuilder {
   /// Set of element IDs to exclude from rendering for theme customization.
   final Set<String> excludeIds;
 
+  /// The style to select from the theme's `<stylemenu>`; null selects the menu's `defaultvalue`.
+  final String? styleId;
+
+  /// Overlays of the selected style to switch on; null uses the `enabled` attribute of each overlay.
+  final Set<String>? enabledOverlays;
+
+  /// The parsed `<stylemenu>`, null if the theme has none.
+  RenderthemeStyleMenu? styleMenu;
+
+  /// Categories enabled by the selected style. Null if the theme has no `<stylemenu>`, in which case every rule is used.
+  Set<String>? categories;
+
   /// Private constructor for creating builder instances.
   ///
   /// [excludeIds] Optional set of element IDs to exclude from rendering
-  RenderThemeBuilder._({this.excludeIds = const {}});
+  RenderThemeBuilder._({this.excludeIds = const {}, this.styleId, this.enabledOverlays});
 
   /// Creates a RenderTheme from XML content string.
   ///
@@ -96,10 +108,15 @@ class RenderThemeBuilder {
   ///
   /// [content] XML theme content as string
   /// [excludeIds] Optional set of element IDs to exclude from rendering
+  /// [styleId] The style (a `<layer>` id) to select from the theme's `<stylemenu>`. Defaults to the
+  /// menu's `defaultvalue`. Rules whose `cat` is not enabled by the style are not loaded. Ignored if
+  /// the theme has no style menu.
+  /// [enabledOverlays] Overlays of the selected style to switch on. Defaults to the overlays the theme
+  /// marks `enabled="true"`.
   /// Returns the parsed RenderTheme
   /// Throws FormatException if XML parsing fails
-  static Rendertheme createFromString(String content, {Set<String> excludeIds = const {}}) {
-    RenderThemeBuilder renderThemeBuilder = RenderThemeBuilder._(excludeIds: excludeIds);
+  static Rendertheme createFromString(String content, {Set<String> excludeIds = const {}, String? styleId, Set<String>? enabledOverlays}) {
+    RenderThemeBuilder renderThemeBuilder = RenderThemeBuilder._(excludeIds: excludeIds, styleId: styleId, enabledOverlays: enabledOverlays);
     renderThemeBuilder._parseXml(content);
     renderThemeBuilder.forHash =
         "${MapsforgeSettingsMgr().getUserScaleFactor()}_${MapsforgeSettingsMgr().getFontScaleFactor()}_${MapsforgeSettingsMgr().tileSize}";
@@ -109,11 +126,11 @@ class RenderThemeBuilder {
   /// Builds and returns a rendertheme by loading a rendertheme file. This
   /// is a convienience-function. If desired we can also implement some caching
   /// so that we do not need to parse the same file over and over again.
-  static Future<Rendertheme> createFromFile(String filename, {Set<String> excludeIds = const {}}) async {
+  static Future<Rendertheme> createFromFile(String filename, {Set<String> excludeIds = const {}, String? styleId, Set<String>? enabledOverlays}) async {
     File file = File(filename);
     List<int> bytes = await file.readAsBytes();
     String content = const Utf8Decoder().convert(bytes);
-    return RenderThemeBuilder.createFromString(content, excludeIds: excludeIds);
+    return RenderThemeBuilder.createFromString(content, excludeIds: excludeIds, styleId: styleId, enabledOverlays: enabledOverlays);
   }
 
   /// @return a new {@code RenderTheme} instance.
@@ -128,7 +145,7 @@ class RenderThemeBuilder {
         rule.parent = null;
       }
     }
-    Rendertheme renderTheme = Rendertheme(maxLevels: _level, rulesList: rules);
+    Rendertheme renderTheme = Rendertheme(maxLevels: _level, rulesList: rules, styleMenu: styleMenu);
     for (Rule rule in rules) {
       rule.secondPass();
     }
@@ -138,6 +155,12 @@ class RenderThemeBuilder {
   int getNextLevel() {
     ++_level;
     return _level;
+  }
+
+  /// A rule is visible if the theme has no style menu, the rule has no category
+  /// or the selected style enables the rule's category.
+  bool isVisibleRule(String? cat) {
+    return categories == null || cat == null || categories!.contains(cat);
   }
 
   ///
@@ -222,6 +245,17 @@ class RenderThemeBuilder {
       }
     }
     assert(rootElement.children.isNotEmpty);
+    // The style menu decides which rules are loaded, so resolve it before any rule is parsed
+    // regardless of where the theme places it.
+    for (XmlElement element in rootElement.childElements) {
+      if (element.name.toString() == "stylemenu") {
+        if (styleMenu != null) throw Exception("More than one stylemenu");
+        styleMenu = RenderthemeStyleMenu.parse(element);
+        String style = styleId ?? styleMenu!.defaultValue;
+        categories = styleMenu!.categoriesFor(style, enabledOverlays: enabledOverlays);
+        if (categories == null) throw Exception("Style $style is not a layer of stylemenu ${styleMenu!.id}");
+      }
+    }
     bool foundElement = false;
     for (XmlNode node in rootElement.children) {
       switch (node.nodeType) {
@@ -234,6 +268,7 @@ class RenderThemeBuilder {
             XmlElement element = node as XmlElement;
             foundElement = true;
             if (element.name.toString() == "rule") {
+              if (!isVisibleRule(element.getAttribute(RuleBuilder.CAT))) break;
               // Pass the excludeIds from this builder into each new RuleBuilder.
               RuleBuilder ruleBuilder = RuleBuilder(this, excludeIds: excludeIds);
               ruleBuilder.parse(element);
@@ -249,7 +284,7 @@ class RenderThemeBuilder {
               //print("Time ${DateTime.now().millisecondsSinceEpoch - time} after hillshading");
               break;
             } else if ("stylemenu" == element.name.toString()) {
-              // TODO: handle stylemenu if needed.
+              // already parsed above
               break;
             }
             throw Exception("Invalid node ${element.name.toString()}");
