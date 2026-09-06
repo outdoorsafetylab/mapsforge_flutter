@@ -24,7 +24,6 @@ import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/renderinstru
 import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/renderinstruction_way.dart';
 import 'package:mapsforge_flutter_rendertheme/src/rule/negativerule.dart';
 import 'package:mapsforge_flutter_rendertheme/src/rule/positiverule.dart';
-import 'package:mapsforge_flutter_rendertheme/src/rule/ruleoptimizer.dart';
 import 'package:mapsforge_flutter_rendertheme/src/xml/xmlutils.dart';
 import 'package:xml/xml.dart';
 
@@ -96,7 +95,7 @@ class RuleBuilder {
       case Closed.ANY:
         result = const AnyMatcher();
     }
-    return RuleOptimizer.optimizeClosedMatcher(result, ruleBuilderStack);
+    return result;
   }
 
   ElementMatcher getElementMatcher() {
@@ -109,7 +108,7 @@ class RuleBuilder {
       case Element.ANY:
         result = const AnyMatcher();
     }
-    return RuleOptimizer.optimizeElementMatcher(result, ruleBuilderStack);
+    return result;
   }
 
   RuleBuilder(this.renderThemeBuilder, {Set<String>? excludeIds})
@@ -191,11 +190,10 @@ class RuleBuilder {
       );
     }
 
-    if (renderinstructionNodes.isEmpty && renderinstructionOpenWays.isEmpty && renderinstructionClosedWays.isEmpty) {
-      keyMatcher = RuleOptimizer.optimize(keyMatcher, ruleBuilderStack);
-      valueMatcher = RuleOptimizer.optimize(valueMatcher, ruleBuilderStack);
-    }
-
+    // Note: mapsforge (Java) optionally widens keyMatcher/valueMatcher to AnyMatcher here when an *ancestor*
+    // rule already guarantees the match. This port used to do the same with the *subrules* instead, which
+    // widened a parent whenever a child repeated its key and thereby applied the parent's other children
+    // to every element. Matching without that shortcut is always correct.
     return PositiveRule(
       keyMatcher: keyMatcher,
       valueMatcher: valueMatcher,
