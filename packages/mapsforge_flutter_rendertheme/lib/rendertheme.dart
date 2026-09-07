@@ -21,3 +21,4 @@ export 'src/rule/rule.dart';
 export 'src/rule/rule_analyzer.dart';
 export 'src/rule/symbol_searcher.dart';
 export 'src/xml/renderthemebuilder.dart';
+export 'src/xml/rendertheme_stylemenu.dart';

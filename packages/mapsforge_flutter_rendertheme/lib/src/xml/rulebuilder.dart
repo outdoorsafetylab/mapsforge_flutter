@@ -24,7 +24,6 @@ import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/renderinstru
 import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/renderinstruction_way.dart';
 import 'package:mapsforge_flutter_rendertheme/src/rule/negativerule.dart';
 import 'package:mapsforge_flutter_rendertheme/src/rule/positiverule.dart';
-import 'package:mapsforge_flutter_rendertheme/src/rule/ruleoptimizer.dart';
 import 'package:mapsforge_flutter_rendertheme/src/xml/xmlutils.dart';
 import 'package:xml/xml.dart';
 
@@ -96,7 +95,7 @@ class RuleBuilder {
       case Closed.ANY:
         result = const AnyMatcher();
     }
-    return RuleOptimizer.optimizeClosedMatcher(result, ruleBuilderStack);
+    return result;
   }
 
   ElementMatcher getElementMatcher() {
@@ -109,7 +108,7 @@ class RuleBuilder {
       case Element.ANY:
         result = const AnyMatcher();
     }
-    return RuleOptimizer.optimizeElementMatcher(result, ruleBuilderStack);
+    return result;
   }
 
   RuleBuilder(this.renderThemeBuilder, {Set<String>? excludeIds})
@@ -164,14 +163,21 @@ class RuleBuilder {
     }
   }
 
-  /// @return a new {@code Rule} instance.
-  Rule build() {
+  /// Returns a new {@code Rule} instance, or null if the rule can never draw
+  /// anything: it has no render instructions and all its subrules are
+  /// [impossible] (or dead themselves). Such a rule is dropped instead of
+  /// failing the `Rule` constructor's assertion.
+  Rule? build() {
     List<Rule> rules = [];
     for (var ruleBuilder in ruleBuilderStack) {
       if (!ruleBuilder.impossible) {
-        Rule rule = ruleBuilder.build();
-        rules.add(rule);
+        Rule? rule = ruleBuilder.build();
+        if (rule != null) rules.add(rule);
       }
+    }
+    if (rules.isEmpty && renderinstructionNodes.isEmpty && renderinstructionOpenWays.isEmpty && renderinstructionClosedWays.isEmpty) {
+      _log.fine("Dropping rule without render instructions and without applicable subrules: $this");
+      return null;
     }
     if (negativeMatcher != null) {
       return NegativeRule(
@@ -184,11 +190,10 @@ class RuleBuilder {
       );
     }
 
-    if (renderinstructionNodes.isEmpty && renderinstructionOpenWays.isEmpty && renderinstructionClosedWays.isEmpty) {
-      keyMatcher = RuleOptimizer.optimize(keyMatcher, ruleBuilderStack);
-      valueMatcher = RuleOptimizer.optimize(valueMatcher, ruleBuilderStack);
-    }
-
+    // Note: mapsforge (Java) optionally widens keyMatcher/valueMatcher to AnyMatcher here when an *ancestor*
+    // rule already guarantees the match. This port used to do the same with the *subrules* instead, which
+    // widened a parent whenever a child repeated its key and thereby applied the parent's other children
+    // to every element. Matching without that shortcut is always correct.
     return PositiveRule(
       keyMatcher: keyMatcher,
       valueMatcher: valueMatcher,
@@ -304,6 +309,9 @@ class RuleBuilder {
       if (ruleId != null && excludeIds.contains(ruleId)) {
         _log.info("Excluding rule with id: $ruleId");
         return; // Skip parsing this rule entirely.
+      }
+      if (!renderThemeBuilder.isVisibleRule(rootElement.getAttribute(CAT))) {
+        return; // The category is switched off in the selected style.
       }
       checkState(qName, XmlElementType.RULE);
       RuleBuilder ruleBuilder = RuleBuilder(renderThemeBuilder, excludeIds: excludeIds);
@@ -457,13 +465,6 @@ class RuleBuilder {
   bool isVisibleWay(RenderinstructionWay renderInstructionWay) {
     return true;
     //return this.categories == null || renderInstruction.getCategory() == null || this.categories.contains(renderInstruction.getCategory());
-  }
-
-  bool isVisibleRule(Rule rule) {
-    // a rule is visible if categories is not set, the rule has not category or the
-    // categories contain this rule's category
-    return true;
-    //return this.categories == null || rule.cat == null || this.categories.contains(rule.cat);
   }
 
   int getNextLevel() {

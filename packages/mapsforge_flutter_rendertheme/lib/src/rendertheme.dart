@@ -2,6 +2,7 @@ import 'package:mapsforge_flutter_core/model.dart';
 import 'package:mapsforge_flutter_core/utils.dart';
 import 'package:mapsforge_flutter_rendertheme/src/rendertheme_zoomlevel.dart';
 import 'package:mapsforge_flutter_rendertheme/src/rule/rule.dart';
+import 'package:mapsforge_flutter_rendertheme/src/xml/rendertheme_stylemenu.dart';
 
 /// Main rendering theme engine that defines how map features are styled and drawn.
 ///
@@ -55,7 +56,20 @@ class Rendertheme {
   /// Hash string used for theme identification and caching.
   late final String forHash;
 
-  Rendertheme({required this.maxLevels, this.mapBackground, this.mapBackgroundOutside, required this.rulesList, this.hasBackgroundOutside});
+  /// The theme's `<stylemenu>` (selectable styles and their overlays), null if the theme has none.
+  ///
+  /// The rules of this theme are already filtered for one style; to render a different
+  /// style, build a new theme with [RenderThemeBuilder.createFromString] and its `styleId`.
+  final RenderthemeStyleMenu? styleMenu;
+
+  Rendertheme({
+    required this.maxLevels,
+    this.mapBackground,
+    this.mapBackgroundOutside,
+    required this.rulesList,
+    this.hasBackgroundOutside,
+    this.styleMenu,
+  });
 
   /// Returns the number of distinct drawing levels required by this theme.
   ///
