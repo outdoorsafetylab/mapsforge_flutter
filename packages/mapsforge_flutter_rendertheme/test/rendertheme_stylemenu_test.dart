@@ -162,6 +162,18 @@ $footer''');
       expect(matchOpenWay(theme, 14, [const Tag("boundary", "administrative")]).length, 1);
     });
 
+    test('a style whose overlays switch every rule off builds an empty theme', () {
+      const String contourRule = '''
+  <rule e="way" k="contour_ext" v="*" cat="contour">
+    <line stroke="#A06000" stroke-width="1"/>
+  </rule>''';
+      Rendertheme theme = RenderThemeBuilder.createFromString('$header$menu$contourRule$footer');
+      expect(matchOpenWay(theme, 14, [const Tag("contour_ext", "elevation_medium")]).length, 1);
+      theme = RenderThemeBuilder.createFromString('$header$menu$contourRule$footer', disabledOverlays: {"contours"});
+      expect(theme.rulesList, isEmpty);
+      expect(matchOpenWay(theme, 14, [const Tag("contour_ext", "elevation_medium")]), isEmpty);
+    });
+
     test('the stylemenu may follow the rules', () {
       Rendertheme theme = RenderThemeBuilder.createFromString('$header$rules$menu$footer');
       expect(matchOpenWay(theme, 14, [const Tag("boundary", "administrative")]), isEmpty);
