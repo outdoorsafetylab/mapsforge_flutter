@@ -40,6 +40,9 @@ void main() {
     });
 
     test('cache does not grow when the same lists are requested again', () {
+      // prime both caches so the sizes recorded below do not depend on which tests ran before
+      AttributeMatcher.getKeyMatcher(["highway", "railway"]);
+      AttributeMatcher.getValueMatcher(["path", "track"]);
       int keys = AttributeMatcher.MATCHERS_CACHE_KEY.length;
       int values = AttributeMatcher.MATCHERS_CACHE_VALUE.length;
       for (int i = 0; i < 10; ++i) {
