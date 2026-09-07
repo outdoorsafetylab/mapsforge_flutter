@@ -145,7 +145,8 @@ class RenderThemeBuilder {
 
   /// @return a new {@code RenderTheme} instance.
   Rendertheme _build() {
-    assert(ruleBuilderStack.isNotEmpty);
+    // the stack is empty when the style or the overlays switch every top-level rule off, which is a valid
+    // (if blank) theme
     List<Rule> rules = [];
     for (var ruleBuilder in ruleBuilderStack) {
       if (!ruleBuilder.impossible) {
