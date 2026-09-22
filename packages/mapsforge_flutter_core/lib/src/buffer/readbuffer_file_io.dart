@@ -24,6 +24,11 @@ class ReadbufferFile implements ReadbufferSource {
 
   int _position = 0;
 
+  /// Set by [freeRessources]: reads still in flight hand their resource
+  /// back to be closed instead of re-queuing it, and no new resource is
+  /// opened afterwards.
+  bool _disposed = false;
+
   ReadbufferFile(this.filename);
 
   @override
@@ -31,14 +36,35 @@ class ReadbufferFile implements ReadbufferSource {
     freeRessources();
   }
 
+  /// Closes the pooled resources. Reads may still be in flight (a render
+  /// job aborted by dispose keeps its awaited read); their resource is not
+  /// in the pool at this moment and is closed by [_release] when the read
+  /// returns. The pool is snapshotted before the first await so a
+  /// returning read cannot modify the queue under the iteration.
   @override
   Future<void> freeRessources() async {
-    await _resource?.close();
+    _disposed = true;
+    final resource = _resource;
     _resource = null;
-    for (var resource in _resourceAts) {
-      await resource.close();
-    }
+    final pooled = List<_ReadbufferFileResource>.of(_resourceAts);
     _resourceAts.clear();
+    await resource?.close();
+    for (var r in pooled) {
+      await r.close();
+    }
+  }
+
+  _ReadbufferFileResource _acquire() {
+    if (_disposed) throw StateError('ReadbufferFile disposed: $filename');
+    return _resourceAts.isNotEmpty ? _resourceAts.removeFirst() : _ReadbufferFileResource(filename);
+  }
+
+  void _release(_ReadbufferFileResource resource) {
+    if (_disposed) {
+      resource.close();
+      return;
+    }
+    _resourceAts.addLast(resource);
   }
 
   /// Reads the given amount of bytes from the file into the read buffer and resets the internal buffer position. If
@@ -51,6 +77,7 @@ class ReadbufferFile implements ReadbufferSource {
   Future<Readbuffer> readFromFile(int length) async {
     assert(length > 0);
     var session = PerformanceProfiler().startSession(category: "ReadbufferFile.read");
+    if (_disposed) throw StateError('ReadbufferFile disposed: $filename');
     _resource ??= _ReadbufferFileResource(filename);
     Uint8List bufferData = await _resource!.read(length);
     Readbuffer result = Readbuffer(bufferData, _position);
@@ -61,6 +88,7 @@ class ReadbufferFile implements ReadbufferSource {
 
   @override
   Future<void> setPosition(int position) async {
+    if (_disposed) throw StateError('ReadbufferFile disposed: $filename');
     _resource ??= _ReadbufferFileResource(filename);
     await _resource!.setPosition(position);
     _position = position;
@@ -72,9 +100,9 @@ class ReadbufferFile implements ReadbufferSource {
     assert(position >= 0);
 
     var session = PerformanceProfiler().startSession(category: "ReadbufferFile.readAt");
-    _ReadbufferFileResource resourceAt = _resourceAts.isNotEmpty ? _resourceAts.removeFirst() : _ReadbufferFileResource(filename);
+    _ReadbufferFileResource resourceAt = _acquire();
     Uint8List bufferData = await resourceAt.readAt(position, length);
-    _resourceAts.addLast(resourceAt);
+    _release(resourceAt);
     Readbuffer result = Readbuffer(bufferData, position);
     session.complete();
     return result;
@@ -86,9 +114,9 @@ class ReadbufferFile implements ReadbufferSource {
     assert(position >= 0);
 
     var session = PerformanceProfiler().startSession(category: "ReadbufferFile.readAt");
-    _ReadbufferFileResource resourceAt = _resourceAts.isNotEmpty ? _resourceAts.removeFirst() : _ReadbufferFileResource(filename);
+    _ReadbufferFileResource resourceAt = _acquire();
     Uint8List bufferData = await resourceAt.readAtMax(position, maxLength);
-    _resourceAts.addLast(resourceAt);
+    _release(resourceAt);
     Readbuffer result = Readbuffer(bufferData, position);
     session.complete();
     return result;
@@ -97,9 +125,9 @@ class ReadbufferFile implements ReadbufferSource {
   @override
   Future<int> length() async {
     if (_length != null) return _length!;
-    _ReadbufferFileResource resourceAt = _resourceAts.isNotEmpty ? _resourceAts.removeFirst() : _ReadbufferFileResource(filename);
+    _ReadbufferFileResource resourceAt = _acquire();
     _length = await resourceAt.length();
-    _resourceAts.addLast(resourceAt);
+    _release(resourceAt);
     assert(_length! >= 0);
     //_log.info("length needed ${DateTime.now().millisecondsSinceEpoch - time} ms");
     return _length!;
