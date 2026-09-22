@@ -80,6 +80,53 @@ void main() {
     expect(main.parent, 'base');
     expect(main.overlays, ['overlay1']);
   });
+
+  test('stylemenu overlays are off unless enabled="true"', () {
+    final xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<rendertheme xmlns="http://mapsforge.org/renderTheme" version="6">
+  <stylemenu id="menu" defaultvalue="main" defaultlang="en">
+    <layer id="base" visible="false">
+      <name lang="en" value="Base" />
+      <cat id="base_cat" />
+    </layer>
+    <layer id="on" enabled="true">
+      <name lang="en" value="On" />
+      <cat id="on_cat" />
+    </layer>
+    <layer id="off" enabled="false">
+      <name lang="en" value="Off" />
+      <cat id="off_cat" />
+    </layer>
+    <layer id="unset">
+      <name lang="en" value="Unset" />
+      <cat id="unset_cat" />
+    </layer>
+    <layer id="main" parent="base" visible="true">
+      <name lang="en" value="Main" />
+      <cat id="main_cat" />
+      <overlay id="on" />
+      <overlay id="off" />
+      <overlay id="unset" />
+    </layer>
+  </stylemenu>
+  <rule e="way" k="natural" v="sea" cat="main_cat"><area fill="#ffffff" /></rule>
+  <rule e="way" k="natural" v="land" cat="base_cat"><area fill="#ffffff" /></rule>
+  <rule e="way" k="natural" v="wood" cat="on_cat"><area fill="#ffffff" /></rule>
+  <rule e="way" k="natural" v="scrub" cat="off_cat"><area fill="#ffffff" /></rule>
+  <rule e="way" k="natural" v="heath" cat="unset_cat"><area fill="#ffffff" /></rule>
+  <rule e="way" k="natural" v="water"><area fill="#ffffff" /></rule>
+</rendertheme>
+''';
+
+    final theme = RenderThemeBuilder.createFromString(xml);
+    // The default style: its own categories, the parent's, and only the
+    // overlays the theme switches on (mapsforge Rendertheme.md, stylemenus).
+    expect(theme.styleMenu!.categoriesForLayerId('main'), {'main_cat', 'base_cat', 'on_cat'});
+
+    // Which is what the builder applied: 4 of the 6 rules survive at any zoom.
+    final rules = theme.prepareZoomlevel(12).rulesList;
+    expect(rules.length, 4);
+  });
 }
 
 void _initLogging() {
