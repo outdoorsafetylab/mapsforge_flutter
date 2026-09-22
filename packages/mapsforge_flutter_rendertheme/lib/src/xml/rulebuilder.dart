@@ -164,14 +164,21 @@ class RuleBuilder {
     }
   }
 
-  /// @return a new {@code Rule} instance.
-  Rule build() {
+  /// Returns a new {@code Rule} instance, or null if the rule can never draw
+  /// anything: it has no render instructions and all its subrules are
+  /// [impossible] (or dead themselves). Such a rule is dropped instead of
+  /// failing the `Rule` constructor's assertion.
+  Rule? build() {
     List<Rule> rules = [];
     for (var ruleBuilder in ruleBuilderStack) {
       if (!ruleBuilder.impossible) {
-        Rule rule = ruleBuilder.build();
-        rules.add(rule);
+        Rule? rule = ruleBuilder.build();
+        if (rule != null) rules.add(rule);
       }
+    }
+    if (rules.isEmpty && renderinstructionNodes.isEmpty && renderinstructionOpenWays.isEmpty && renderinstructionClosedWays.isEmpty) {
+      _log.fine("Dropping rule without render instructions and without applicable subrules: $this");
+      return null;
     }
     if (negativeMatcher != null) {
       return NegativeRule(
