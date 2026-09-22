@@ -75,6 +75,10 @@ class StyleMenu {
 
     for (final overlayId in layer.overlays) {
       if (overlayId.isEmpty) continue;
+      // An overlay is off unless the theme declares it enabled="true"
+      // (mapsforge Rendertheme.md, stylemenus).
+      final overlay = layerById(overlayId);
+      if (overlay == null || overlay.enabled != true) continue;
       _collectCategories(overlayId, result, visited);
     }
   }
