@@ -5,6 +5,7 @@ import 'package:mapsforge_flutter_rendertheme/renderinstruction.dart';
 import 'package:mapsforge_flutter_rendertheme/rendertheme.dart';
 import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/base_src_mixin.dart';
 import 'package:test/test.dart';
+import 'package:xml/xml.dart';
 
 /// Labels on ways (area names, symbols, icons) are painted around the way's centre and must collide with that box,
 /// not with the way's geometry; node labels must collide where the painters put them (anchor + dy).
@@ -32,6 +33,9 @@ void main() {
   </rule>
   <rule e="node" k="place" v="village">
     <caption k="name" font-size="10"/>
+  </rule>
+  <rule e="node" k="tourism" v="viewpoint">
+    <symbol src="file:viewpoint.svg" position="below" dy="30"/>
   </rule>
   <rule e="node" k="natural" v="peak">
     <caption k="name" font-size="10" dy="30"/>
@@ -138,6 +142,51 @@ void main() {
     final centre = label.wayProperties.centerAbsolute;
     expect(dyOf(label), greaterThan(0));
     expect(label.getBoundaryAbsolute(), sameBox(label.renderInstruction.getBoundary(label).shift(centre)));
+  });
+
+  /// Icons are not created from theme XML (only symbols are); build one the way a caller would.
+  RenderinstructionIcon icon() =>
+      RenderinstructionIcon(0)
+        ..parse(XmlDocument.parse('<icon src="file:icon.svg" position="below" dy="30"/>').rootElement);
+
+  test('a way icon collides at the unshifted centre (its painter adds no dy to the anchor)', () {
+    final way = square(cx, cy, 5, const [Tag('amenity', 'parking')]);
+    final wayProperties = WayProperties(way, projection);
+    final collection = LayerContainerCollection(level.maxLevels);
+    icon().matchWay(collection.getLayer(0), wayProperties);
+    collection.reduce();
+    final label = collection.labels.renderInfos.single as RenderInfoWay;
+    expect(dyOf(label), greaterThan(0));
+    expect(
+      label.getBoundaryAbsolute(),
+      sameBox(label.renderInstruction.getBoundary(label).shift(wayProperties.centerAbsolute)),
+    );
+  });
+
+  test('node symbols and icons collide at anchor + dy', () {
+    final symbol = labelOfNode(cx, cy, const [Tag('tourism', 'viewpoint')]);
+    final a = (symbol as RenderInfoNode).nodeProperties.getCoordinatesAbsolute();
+    expect(dyOf(symbol), greaterThan(0));
+    expect(
+      symbol.getBoundaryAbsolute(),
+      sameBox(symbol.renderInstruction.getBoundary(symbol).shift(Mappoint(a.x, a.y + dyOf(symbol)))),
+    );
+
+    final poi = PointOfInterest(
+      0,
+      TagCollection(tags: const [Tag('tourism', 'viewpoint')]),
+      LatLong(projection.pixelYToLatitude(cy), projection.pixelXToLongitude(cx)),
+    );
+    final collection = LayerContainerCollection(level.maxLevels);
+    icon().matchNode(collection.getLayer(0), NodeProperties(poi, projection));
+    collection.reduce();
+    final iconLabel = collection.labels.renderInfos.single as RenderInfoNode;
+    final b = iconLabel.nodeProperties.getCoordinatesAbsolute();
+    expect(dyOf(iconLabel), greaterThan(0));
+    expect(
+      iconLabel.getBoundaryAbsolute(),
+      sameBox(iconLabel.renderInstruction.getBoundary(iconLabel).shift(Mappoint(b.x, b.y + dyOf(iconLabel)))),
+    );
   });
 
   test('a node caption collides at anchor + dy; without dy the box is unchanged', () {
