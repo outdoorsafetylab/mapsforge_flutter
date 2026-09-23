@@ -15,7 +15,15 @@ import 'package:mapsforge_flutter_rendertheme/src/model/wayproperties.dart';
 class RenderInfoWay<T extends Renderinstruction> extends RenderInfo<T> {
   final WayProperties wayProperties;
 
-  RenderInfoWay(this.wayProperties, super.renderInstruction, {super.caption});
+  /// Extra vertical offset the painter adds to the anchor of a label placed at the way's centre; `null` for
+  /// renderinfos that follow the way (their boundary stays the way's bounding box).
+  final double? centerAnchorDy;
+
+  RenderInfoWay(this.wayProperties, super.renderInstruction, {super.caption}) : centerAnchorDy = null;
+
+  /// A label drawn around the way's centre (caption, symbol, icon): it collides with the box it is painted in,
+  /// not with the way's geometry. [anchorDy] must match what the painter adds to the centre.
+  RenderInfoWay.centered(this.wayProperties, super.renderInstruction, {super.caption, required double anchorDy}) : centerAnchorDy = anchorDy;
 
   @override
   void render(RenderContext renderContext) {
@@ -43,7 +51,15 @@ class RenderInfoWay<T extends Renderinstruction> extends RenderInfo<T> {
   @override
   MapRectangle getBoundaryAbsolute() {
     if (boundaryAbsolute != null) return boundaryAbsolute!;
-    boundaryAbsolute = wayProperties.getBoundaryAbsolute();
+    final anchorDy = centerAnchorDy;
+    if (anchorDy == null) {
+      boundaryAbsolute = wayProperties.getBoundaryAbsolute();
+    } else {
+      // The box the label is painted in, not the way's geometry: a long name on a small area reaches far beyond
+      // the area, and a large area must not clash with labels far from its centre.
+      Mappoint center = wayProperties.centerAbsolute;
+      boundaryAbsolute = renderInstruction.getBoundary(this).shift(Mappoint(center.x, center.y + anchorDy));
+    }
     return boundaryAbsolute!;
   }
 }

@@ -250,6 +250,6 @@ class RenderinstructionCaption extends Renderinstruction
         break;
     }
 
-    layerContainer.addLabel(RenderInfoWay(wayProperties, this, caption: caption.trim()));
+    layerContainer.addLabel(RenderInfoWay.centered(wayProperties, this, caption: caption.trim(), anchorDy: dy));
   }
 }

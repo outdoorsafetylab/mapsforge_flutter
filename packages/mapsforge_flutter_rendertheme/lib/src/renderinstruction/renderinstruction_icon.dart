@@ -161,6 +161,7 @@ class RenderinstructionIcon extends Renderinstruction with BaseSrcMixin, BitmapS
 
     if (wayProperties.getCoordinatesAbsolute().isEmpty) return;
 
-    layerContainer.addLabel(RenderInfoWay(wayProperties, this));
+    // The way painters place symbols at the unshifted centre.
+    layerContainer.addLabel(RenderInfoWay.centered(wayProperties, this, anchorDy: 0));
   }
 }

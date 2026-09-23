@@ -31,6 +31,8 @@ class WayProperties implements NodeWayProperties {
 
   WayProperties(this.way, PixelProjection projection) : layer = max(0, way.layer), isClosedWay = LatLongUtils.isClosedWay(way.latLongs[0]) {
     _calculateCoordinatesAbsolute(projection);
+    // Decided once, so collision and painting always see the same point.
+    center = way.labelPosition != null ? projection.latLonToPixel(way.labelPosition!) : _boundaryAbsolute?.getCenter();
   }
 
   List<List<Mappoint>> getCoordinatesAbsolute() {
@@ -52,14 +54,13 @@ class WayProperties implements NodeWayProperties {
     return coordinatesAbsolute;
   }
 
-  Mappoint getCenterAbsolute(PixelProjection projection) {
-    if (center != null) return center!;
+  /// Where labels are anchored: the way's label position if it has one, else the centre of its outer ring's
+  /// bounding box. Fixed at construction, so every caller sees the same point (the label position used to be
+  /// returned only from the second call on).
+  Mappoint get centerAbsolute => center ??= _boundaryAbsolute!.getCenter();
 
-    if (way.labelPosition != null) {
-      center = projection.latLonToPixel(way.labelPosition!);
-    }
-    return _boundaryAbsolute!.getCenter();
-  }
+  /// Same as [centerAbsolute]; [projection] is no longer needed and only kept for API compatibility.
+  Mappoint getCenterAbsolute(PixelProjection projection) => centerAbsolute;
 
   int getLayer() {
     return layer;
