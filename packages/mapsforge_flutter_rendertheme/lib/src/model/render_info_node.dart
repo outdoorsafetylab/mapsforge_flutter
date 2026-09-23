@@ -1,6 +1,7 @@
 import 'package:mapsforge_flutter_core/model.dart';
 import 'package:mapsforge_flutter_rendertheme/model.dart';
 import 'package:mapsforge_flutter_rendertheme/renderinstruction.dart';
+import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/base_src_mixin.dart';
 
 class RenderInfoNode<T extends Renderinstruction> extends RenderInfo<T> {
   final NodeProperties nodeProperties;
@@ -40,8 +41,14 @@ class RenderInfoNode<T extends Renderinstruction> extends RenderInfo<T> {
   MapRectangle getBoundaryAbsolute() {
     if (boundaryAbsolute != null) return boundaryAbsolute!;
     MapRectangle boundary = renderInstruction.getBoundary(this);
+    // The node painters add dy to the anchor before placing the boundary (which may contain dy again); the
+    // collision box has to be where the label is painted.
     Mappoint mappoint = nodeProperties.getCoordinatesAbsolute();
-    boundaryAbsolute = boundary.shift(mappoint);
+    final double dy = switch (renderInstruction) {
+      final BaseSrcMixin src => src.dy,
+      _ => 0,
+    };
+    boundaryAbsolute = boundary.shift(Mappoint(mappoint.x, mappoint.y + dy));
     return boundaryAbsolute!;
   }
 
