@@ -57,6 +57,11 @@ class FlutterIsolateInstance {
 
   Isolate? _isolate;
 
+  /// Receives the replies of the isolate; closed by [dispose].
+  ReceivePort? _receivePort;
+
+  bool _disposed = false;
+
   // complete() will be called if the isolate is ready to receive commands.
   final Completer _isolateCompleter = Completer();
 
@@ -64,26 +69,54 @@ class FlutterIsolateInstance {
 
   FlutterIsolateInstance();
 
+  /// Kills the isolate and stops listening to it. Computations still pending fail with a [StateError] instead of
+  /// never completing, and so does every later [compute].
   void dispose() {
-    _isolate?.kill();
+    if (_disposed) return;
+    _disposed = true;
+    _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
     _sendPort = null;
+    _receivePort?.close();
+    _receivePort = null;
+    List<_FlutterProcess> pending = List.of(_flutterProcesses.values);
+    _flutterProcesses.clear();
+    for (_FlutterProcess process in pending) {
+      process._completer.completeError(StateError('isolate disposed'));
+    }
+    if (!_isolateCompleter.isCompleted) _isolateCompleter.completeError(StateError('isolate disposed'));
   }
 
   /// Starts a new isolate. Optionally handle parameters to the isolate for initialization. This should be done if the parameters are the same for all future
   /// calls to the isolate and especially if the parameters are huge so that you do not need to send them for each call to the isolate.
   Future<void> spawn<T>(EntryPoint<T> entryPoint, T initObject) async {
+    // dispose() may fail the start before this method returns the future to the caller
+    _isolateCompleter.future.ignore();
     ReceivePort receivePort = ReceivePort();
+    _receivePort = receivePort;
     unawaited(_listenToIsolate(receivePort));
     IsolateInitInstanceParams<T> initParams = IsolateInitInstanceParams<T>(receivePort.sendPort, initObject);
-    _isolate = await Isolate.spawn<IsolateInitInstanceParams<T>>(entryPoint, initParams); //, onError: errorRp.sendPort);
+    try {
+      _isolate = await Isolate.spawn<IsolateInitInstanceParams<T>>(entryPoint, initParams); //, onError: errorRp.sendPort);
+    } catch (_) {
+      // e.g. the init object cannot be sent to another isolate
+      receivePort.close();
+      _receivePort = null;
+      rethrow;
+    }
+    if (_disposed) {
+      // disposed while the isolate was starting
+      _isolate?.kill(priority: Isolate.immediate);
+      _isolate = null;
+    }
     // let the listener run in background of the main isolate
     return _isolateCompleter.future;
   }
 
   /// Starts a single computation in an isolate. This method runs in the main isolate.
   Future<V> compute<U, V>(U request) {
-    assert(_sendPort != null, "wait until start() is done or isolate is already disposed");
+    if (_disposed) return Future.error(StateError('isolate disposed'));
+    assert(_sendPort != null, "wait until start() is done");
     _FlutterProcess<V> flutterProcess = _FlutterProcess();
     _flutterProcesses[flutterProcess._id] = flutterProcess;
     _IsolateRequestInstanceParams params = _IsolateRequestInstanceParams<U>(flutterProcess._id, request);
@@ -133,7 +166,7 @@ class FlutterIsolateInstance {
       if (data is SendPort) {
         // Receive the SendPort from the Isolate
         _sendPort = data;
-        _isolateCompleter.complete();
+        if (!_isolateCompleter.isCompleted) _isolateCompleter.complete();
       } else if (data is _IsolateErrorInstanceParams) {
         _IsolateErrorInstanceParams result = data;
         _FlutterProcess? flutterProcess = _flutterProcesses.remove(result.id);
