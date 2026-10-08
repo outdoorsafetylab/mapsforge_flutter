@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:logging/logging.dart';
 import 'package:mapsforge_flutter_core/dart_isolate.dart';
@@ -143,8 +145,14 @@ class DatastoreRenderer extends Renderer {
   /// Manages dependencies between tiles for label rendering.
   TileDependencies? tileDependencies;
 
-  /// Reader for extracting map data from the datastore.
+  /// Reader for extracting map data from the datastore, in this isolate.
   DatastoreReader? _datastoreReader;
+
+  /// The reader running in its own isolate if requested with `useIsolateReader`. Started by the first job; every
+  /// job, also the ones running concurrently with the first, shares the one isolate.
+  Future<IsolateDatastoreReader>? _isolateReader;
+
+  bool _disposed = false;
 
   /// Object pool for RenderInfo sets to reduce garbage collection.
   static final ObjectPool<Set<RenderInfo>> _renderInfoSetPool = ObjectPool<Set<RenderInfo>>(
@@ -158,7 +166,9 @@ class DatastoreRenderer extends Renderer {
   /// [datastore] Data source providing map features
   /// [rendertheme] Theme defining visual styling rules
   /// [useSeparateLabelLayer] Whether to render labels at a separate layer (true) or onto the tiles directly (false
-  /// [useIsolateReader] Whether to use an isolate for rendering. If you use [IsolateMapfile] do NOT use an isolateReader
+  /// [useIsolateReader] Whether to read the datastore and match it against the theme in an isolate (drawing stays in
+  /// this isolate). The [datastore] is copied into that isolate, so do not read from it before. If you use
+  /// [IsolateMapfile] do NOT use an isolateReader
   /// [highDetailWays] Whether to keep small open ways and use a finer simplification, see [highDetailWays]
   DatastoreRenderer(
     this.datastore,
@@ -183,8 +193,23 @@ class DatastoreRenderer extends Renderer {
     tileDependencies?.dispose();
     rendertheme.dispose();
     datastore.dispose();
+    _disposed = true;
+    Future<IsolateDatastoreReader>? isolateReader = _isolateReader;
+    _isolateReader = null;
+    if (isolateReader != null) unawaited(isolateReader.then((reader) => reader.dispose(), onError: (_) {}));
     super.dispose();
   }
+
+  Future<DatastoreReader> _reader() async {
+    // a job still running when the renderer is disposed must not start a new isolate
+    if (_disposed) throw StateError('DatastoreRenderer disposed');
+    return _datastoreReader ?? await (_isolateReader ??= createIsolateReader(datastore));
+  }
+
+  /// Starts the reader isolate. Called once per renderer; visible for tests that count the isolates.
+  @protected
+  @visibleForTesting
+  Future<IsolateDatastoreReader> createIsolateReader(Datastore datastore) => IsolateDatastoreReader.create(datastore, highDetailWays: highDetailWays);
 
   ///
   /// Executes a given job and returns a future with the bitmap of this job.
@@ -198,9 +223,7 @@ class DatastoreRenderer extends Renderer {
     RenderthemeZoomlevel renderthemeLevel = rendertheme.prepareZoomlevel(job.tile.zoomLevel);
     session.checkpoint("after prepareZoomlevel");
 
-    _datastoreReader ??= await IsolateDatastoreReader.create(datastore, highDetailWays: highDetailWays);
-
-    LayerContainerCollection? layerContainerCollection = await _datastoreReader!.read(job.tile, renderthemeLevel);
+    LayerContainerCollection? layerContainerCollection = await (await _reader()).read(job.tile, renderthemeLevel);
 
     //timing.lap(100, "RenderContext ${renderContext} created");
     if (layerContainerCollection == null) {
@@ -248,9 +271,7 @@ class DatastoreRenderer extends Renderer {
     // we need something like 600ms to start an isolate whereas the whole read-process just needs about 200ms
     RenderthemeZoomlevel renderthemeLevel = rendertheme.prepareZoomlevel(job.tile.zoomLevel);
 
-    _datastoreReader ??= await IsolateDatastoreReader.create(datastore, highDetailWays: highDetailWays);
-
-    LayerContainerCollection? layerContainerCollection = await _datastoreReader!.readLabels(job.tile, job.rightLower ?? job.tile, renderthemeLevel);
+    LayerContainerCollection? layerContainerCollection = await (await _reader()).readLabels(job.tile, job.rightLower ?? job.tile, renderthemeLevel);
 
     if (layerContainerCollection == null) {
       return JobResult.unsupported();
