@@ -18,11 +18,16 @@ class LabelView extends StatefulWidget {
   /// Hide labels when zoomlevel < minLabelZoom. Null = feature disabled.
   final int? minLabelZoom;
 
+  /// Where the view keeps the labels it retrieves. Pass one to keep them beyond the view, see [MemoryLabelCache]; the
+  /// view does not dispose it. Null makes a cache of the view's own. Cannot be changed on a live view.
+  final MemoryLabelCache? cache;
+
   const LabelView({
     super.key,
     required this.mapModel,
     required this.renderer,
     this.minLabelZoom, // e.g. pass 10 to suppress under zoom 10
+    this.cache,
   });
 
   @override
@@ -37,7 +42,15 @@ class _LabelViewState extends State<LabelView> {
   @override
   void initState() {
     super.initState();
-    jobQueue = LabelJobQueue(mapModel: widget.mapModel, renderer: widget.renderer);
+    jobQueue = LabelJobQueue(mapModel: widget.mapModel, renderer: widget.renderer, cache: widget.cache);
+  }
+
+  @override
+  void didUpdateWidget(covariant LabelView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.cache != widget.cache) {
+      throw Exception("MemoryLabelCache cannot be changed, recreate the view.");
+    }
   }
 
   @override

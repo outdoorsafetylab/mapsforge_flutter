@@ -1,4 +1,5 @@
 import 'package:ecache/ecache.dart';
+import 'package:mapsforge_flutter/src/cache/tile_cache.dart';
 import 'package:mapsforge_flutter_core/model.dart';
 import 'package:mapsforge_flutter_rendertheme/model.dart';
 
@@ -6,13 +7,18 @@ import 'package:mapsforge_flutter_rendertheme/model.dart';
 /// This is a memory-only implementation of the [TileBitmapCache]. It stores the bitmaps in memory.
 /// We use a factory and remember all active instances. This way we can easily purge caches if needed.
 ///
+/// A [LabelView] makes a cache of its own unless it is given one. Like a [TileCache], one cache can serve the views
+/// that show the same renderer one after another; whoever creates a cache disposes it, a view never disposes a cache
+/// it was given.
+///
 class MemoryLabelCache {
   static final List<MemoryLabelCache> _instances = [];
 
   late LruCache<Tile, RenderInfoCollection> _cache;
 
-  factory MemoryLabelCache.create() {
-    MemoryLabelCache result = MemoryLabelCache._();
+  /// [capacity] is in blocks of labels, each of which covers 5 x 5 tiles.
+  factory MemoryLabelCache.create({int capacity = 500}) {
+    MemoryLabelCache result = MemoryLabelCache._(capacity);
     _instances.add(result);
     return result;
   }
@@ -29,8 +35,8 @@ class MemoryLabelCache {
     }
   }
 
-  MemoryLabelCache._() {
-    _cache = LruCache<Tile, RenderInfoCollection>(capacity: 500, name: "MemoryLabelCache");
+  MemoryLabelCache._(int capacity) {
+    _cache = LruCache<Tile, RenderInfoCollection>(capacity: capacity, name: "MemoryLabelCache");
   }
 
   void dispose() {
@@ -56,8 +62,14 @@ class MemoryLabelCache {
     //     });
   }
 
-  Future<RenderInfoCollection> getOrProduce(Tile leftUpper, Tile rightLower, Future<RenderInfoCollection> Function(Tile) producer) {
-    return _cache.getOrProduce(leftUpper, producer);
+  /// Labels that could not be produced are not kept, so the next request produces them again.
+  Future<RenderInfoCollection> getOrProduce(Tile leftUpper, Tile rightLower, Future<RenderInfoCollection> Function(Tile) producer) async {
+    try {
+      return await _cache.getOrProduce(leftUpper, producer);
+    } catch (_) {
+      forgetFailure(_cache, leftUpper);
+      rethrow;
+    }
   }
 
   RenderInfoCollection? get(Tile tile) {
