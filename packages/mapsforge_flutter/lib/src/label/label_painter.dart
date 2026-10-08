@@ -30,13 +30,11 @@ class LabelPainter extends CustomPainter {
     );
     MapRectangle visible = visibleBoundary(labelSet.mapPosition, size);
     bool rotated = labelSet.mapPosition.rotationRadian != 0;
-    for (RenderInfoCollection renderInfoCollection in labelSet.renderInfos) {
-      for (var renderInfo in renderInfoCollection.renderInfos) {
-        // The label set covers blocks of 5x5 tiles around the view, most of which are off-screen.
-        // Painting a caption is expensive (paragraph layout), so skip everything outside the view.
-        if (!cullBoundary(renderInfo, projection, rotated).intersects(visible)) continue;
-        renderInfo.render(renderContext);
-      }
+    for (RenderInfo renderInfo in labelSet.labels) {
+      // The label set covers the tiles around the view too, which are off-screen.
+      // Painting a caption is expensive (paragraph layout), so skip everything outside the view.
+      if (!cullBoundary(renderInfo, projection, rotated).intersects(visible)) continue;
+      renderInfo.render(renderContext);
     }
   }
 
