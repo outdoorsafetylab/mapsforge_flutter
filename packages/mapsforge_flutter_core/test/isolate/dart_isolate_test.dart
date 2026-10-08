@@ -62,6 +62,26 @@ void main() {
         expect(() => workingClass.process(-1), throwsException);
       }
     });
+
+    test('dispose fails pending and later computations instead of leaving them hanging', () async {
+      IsolateWorkingClass workingClass = await IsolateWorkingClass.instantiate("isolateParams");
+      int time = DateTime.now().millisecondsSinceEpoch;
+      Future<String> pending = workingClass.process(3);
+      workingClass.dispose();
+      await expectLater(pending, throwsStateError);
+      await expectLater(workingClass.process(1), throwsStateError);
+      expect(DateTime.now().millisecondsSinceEpoch - time, lessThan(1000));
+      // disposing twice is harmless
+      workingClass.dispose();
+    });
+
+    test('dispose while the isolate is starting fails the start', () async {
+      FlutterIsolateInstance instance = FlutterIsolateInstance();
+      Future<void> started = instance.spawn(IsolateWorkingClass.entryPoint, "isolateParams");
+      instance.dispose();
+      await expectLater(started, throwsStateError);
+      await expectLater(instance.compute(1), throwsStateError);
+    });
   });
 }
 
@@ -100,6 +120,8 @@ class IsolateWorkingClass {
   Future<String> process(int key) async {
     return _isolateInstance.compute(key);
   }
+
+  void dispose() => _isolateInstance.dispose();
 
   @pragma('vm:entry-point')
   static Future<void> entryPoint(IsolateInitInstanceParams<String> key) async {
