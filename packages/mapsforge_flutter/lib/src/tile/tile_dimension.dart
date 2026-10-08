@@ -48,6 +48,11 @@ class TileDimension {
   }
 
   // Returns true of the minimum tiles of other are contained in this.
+  /// Whether the tiles prepared for this dimension, the margin included, contain every tile [other] shows.
+  bool coversVisible(TileDimension other) {
+    return minLeft <= other.left && minRight >= other.right && minTop <= other.top && minBottom >= other.bottom;
+  }
+
   bool contains(TileDimension other) {
     return left <= other.minLeft && right >= other.minRight && top <= other.minTop && bottom >= other.minBottom;
   }
