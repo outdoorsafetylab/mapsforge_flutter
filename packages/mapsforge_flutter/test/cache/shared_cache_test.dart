@@ -119,7 +119,7 @@ void main() {
         await Future<void>.delayed(settle);
         int retrieved = renderer.labelJobs;
         expect(retrieved, greaterThan(0));
-        expect(first.labelSet.renderInfos, hasLength(retrieved));
+        expect(first.labelSet.jobLabels.blockCount, retrieved);
         first.dispose();
 
         LabelJobQueue second = LabelJobQueue(mapModel: mapModel, renderer: renderer, cache: cache);
@@ -127,7 +127,7 @@ void main() {
         second.setPosition(position);
         await Future<void>.delayed(settle);
         expect(renderer.labelJobs, retrieved);
-        expect(second.labelSet.renderInfos, hasLength(retrieved));
+        expect(second.labelSet.jobLabels.blockCount, retrieved);
         second.dispose();
 
         cache.dispose();
@@ -166,7 +166,7 @@ void main() {
         one.setPosition(MapPosition(46, 18, 16));
         await Future<void>.delayed(settle);
         expect(one.labelSet.mapPosition.zoomlevel, 16);
-        expect(one.labelSet.renderInfos, isNotEmpty);
+        expect(one.labelSet.jobLabels.blockCount, greaterThan(0));
         one.dispose();
         await mapModel.dispose();
       });
