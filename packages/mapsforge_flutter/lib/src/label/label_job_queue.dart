@@ -69,8 +69,9 @@ class LabelJobQueue extends ChangeNotifier {
         _currentJob?.labelSet.mapPosition.zoomlevel == position.zoomlevel &&
         _currentJob?.labelSet.mapPosition.indoorLevel == position.indoorLevel &&
         _coversVisible(_currentJob!.tileDimension, TileHelper.calculateTiles(mapViewPosition: position, screensize: _size!))) {
-      // do not recalculate for rotation or scaling as long as the prepared blocks cover the view
-      LabelSet labelSet = LabelSet(center: _currentJob!.labelSet.center, mapPosition: position, renderInfos: _currentJob!.labelSet.renderInfos);
+      // do not recalculate for rotation or scaling as long as the job covers the view, blocks still arriving go to the
+      // same labels
+      LabelSet labelSet = LabelSet(center: _currentJob!.labelSet.center, mapPosition: position, jobLabels: _currentJob!.labelSet.jobLabels);
       _CurrentJob myJob = _CurrentJob(_currentJob!.tileDimension, labelSet);
       _currentJob = myJob;
       _emitLabelSetBatched(_currentJob!.labelSet);
@@ -116,9 +117,12 @@ class LabelJobQueue extends ChangeNotifier {
 
   MapSize? getSize() => _size;
 
-  /// Whether the blocks of [_range] x [_range] tiles prepared for [prepared] contain every tile [needed] shows.
+  /// Whether the job prepared for [prepared] covers every tile [needed] shows: its blocks of [_range] x [_range] tiles
+  /// were read for them, and its labels were merged over them (the tiles of [prepared] plus the margin, see
+  /// [JobLabels.area]).
   bool _coversVisible(TileDimension prepared, TileDimension needed) {
-    return (prepared.left / _range).floor() * _range <= needed.left &&
+    return prepared.coversVisible(needed) &&
+        (prepared.left / _range).floor() * _range <= needed.left &&
         (prepared.right / _range).floor() * _range + _range - 1 >= needed.right &&
         (prepared.top / _range).floor() * _range <= needed.top &&
         (prepared.bottom / _range).floor() * _range + _range - 1 >= needed.bottom;
@@ -126,19 +130,27 @@ class LabelJobQueue extends ChangeNotifier {
 
   Future<void> _positionEvent(MapPosition position, TileDimension tileDimension) async {
     final session = PerformanceProfiler().startSession(category: "LabelJobQueue");
-    LabelSet labelSet = LabelSet(center: position.getCenter(), mapPosition: position, renderInfos: []);
+    double tileSize = position.projection.tileSize;
+    MapRectangle area = MapRectangle(
+      tileDimension.minLeft * tileSize,
+      tileDimension.minTop * tileSize,
+      (tileDimension.minRight + 1) * tileSize,
+      (tileDimension.minBottom + 1) * tileSize,
+    );
+    LabelSet labelSet = LabelSet(center: position.getCenter(), mapPosition: position, jobLabels: JobLabels(area));
     _CurrentJob myJob = _CurrentJob(tileDimension, labelSet);
     _currentJob = myJob;
     // find a common base (multiplies of 5) to start with
     int maxTileNbr = Tile.getMaxTileNumber(position.zoomlevel);
     List<Tile> missingTiles = [];
+    Map<Tile, RenderInfoCollection> cached = {};
     for (int top = (tileDimension.top / _range).floor() * _range; top <= tileDimension.bottom; top += _range) {
       for (int left = (tileDimension.left / _range).floor() * _range; left <= tileDimension.right; left += _range) {
         Tile leftUpper = Tile(left, top, position.zoomlevel, position.indoorLevel);
         try {
           RenderInfoCollection? collection = _cache.get(leftUpper);
           if (collection != null) {
-            labelSet.renderInfos.add(collection);
+            cached[leftUpper] = collection;
           } else {
             missingTiles.add(leftUpper);
           }
@@ -147,12 +159,12 @@ class LabelJobQueue extends ChangeNotifier {
         }
       }
     }
-    if (myJob._abort) return;
-    if (labelSet.renderInfos.isNotEmpty) {
+    if (myJob.aborted) return;
+    if (labelSet.jobLabels.addAll(cached)) {
       _emitLabelSetBatched(labelSet);
     }
     for (Tile tile in missingTiles) {
-      unawaited(_taskQueue.add(() => _produceLabel(myJob, labelSet, tile.tileX, tile.tileY, position, maxTileNbr)));
+      unawaited(_taskQueue.add(() => _produceLabel(myJob, tile.tileX, tile.tileY, position, maxTileNbr)));
     }
     unawaited(
       _taskQueue.add(() async {
@@ -162,8 +174,8 @@ class LabelJobQueue extends ChangeNotifier {
     session.complete();
   }
 
-  Future<void> _produceLabel(_CurrentJob myJob, LabelSet labelSet, int left, int top, MapPosition position, int maxTileNbr) async {
-    if (myJob._abort) return;
+  Future<void> _produceLabel(_CurrentJob myJob, int left, int top, MapPosition position, int maxTileNbr) async {
+    if (myJob.aborted) return;
     Tile leftUpper = Tile(left, top, position.zoomlevel, position.indoorLevel);
     Tile rightLower = Tile(min(left + _range - 1, maxTileNbr), min(top + _range - 1, maxTileNbr), position.zoomlevel, position.indoorLevel);
     try {
@@ -172,9 +184,10 @@ class LabelJobQueue extends ChangeNotifier {
         if (result.renderInfo == null) throw Exception("No renderInfo for $tile from renderer ${renderer.getRenderKey()}");
         return result.renderInfo!;
       });
-      if (myJob._abort) return;
-      labelSet.renderInfos.add(collection);
-      _emitLabelSetBatched(labelSet);
+      // a label set made for this job later on (rotation, scaling) shares its labels, so it shows this block too
+      if (myJob.labelSet.jobLabels.addAll({leftUpper: collection})) {
+        _emitLabelSetBatched(myJob.labelSet);
+      }
     } on TimeoutException {
       // job cancelled, ignore this error
     }
@@ -195,9 +208,10 @@ class _CurrentJob {
 
   bool _done = false;
 
-  bool _abort = false;
-
   _CurrentJob(this.tileDimension, this.labelSet);
 
-  void abort() => _abort = true;
+  /// Aborts every label set made for this job, see [JobLabels.abort].
+  void abort() => labelSet.jobLabels.abort();
+
+  bool get aborted => labelSet.jobLabels.aborted;
 }
