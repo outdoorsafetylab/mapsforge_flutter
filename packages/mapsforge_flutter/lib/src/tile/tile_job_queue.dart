@@ -70,8 +70,9 @@ class TileJobQueue extends ChangeNotifier {
     if (_currentJob?.tileSet.mapPosition.latitude == position.latitude &&
         _currentJob?.tileSet.mapPosition.longitude == position.longitude &&
         _currentJob?.tileSet.mapPosition.zoomlevel == position.zoomlevel &&
-        _currentJob?.tileSet.mapPosition.indoorLevel == position.indoorLevel) {
-      // do not recalculate for rotation or scaling
+        _currentJob?.tileSet.mapPosition.indoorLevel == position.indoorLevel &&
+        _currentJob!.tileDimension.coversVisible(TileHelper.calculateTiles(mapViewPosition: position, screensize: _size!))) {
+      // do not recalculate for rotation or scaling as long as the prepared tiles cover the view
       TileSet tileSet = TileSet(center: _currentJob!.tileSet.center, mapPosition: position);
       tileSet.images.addEntries(_currentJob!.tileSet.images.entries);
       _CurrentJob myJob = _CurrentJob(_currentJob!.tileDimension, tileSet);
