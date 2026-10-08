@@ -12,7 +12,11 @@ class TileView extends StatefulWidget {
 
   final Renderer renderer;
 
-  const TileView({super.key, required this.mapModel, required this.renderer});
+  /// Where the view keeps the tiles it renders. Pass one to keep them beyond the view, see [TileCache]; the view does
+  /// not dispose it. Null makes a cache of the view's own. Cannot be changed on a live view.
+  final TileCache? cache;
+
+  const TileView({super.key, required this.mapModel, required this.renderer, this.cache});
 
   @override
   State<TileView> createState() => _TileViewState();
@@ -26,7 +30,7 @@ class _TileViewState extends State<TileView> {
   @override
   void initState() {
     super.initState();
-    jobQueue = TileJobQueue(mapModel: widget.mapModel, renderer: widget.renderer);
+    jobQueue = TileJobQueue(mapModel: widget.mapModel, renderer: widget.renderer, cache: widget.cache);
   }
 
   @override
@@ -40,6 +44,9 @@ class _TileViewState extends State<TileView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mapModel != widget.mapModel) {
       throw Exception("MapModel cannot be changed, recreate all classes which uses MapModel.");
+    }
+    if (oldWidget.cache != widget.cache) {
+      throw Exception("TileCache cannot be changed, recreate the view.");
     }
   }
 

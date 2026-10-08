@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:mapsforge_flutter/mapsforge.dart';
-import 'package:mapsforge_flutter/src/cache/memory_label_cache.dart';
 import 'package:mapsforge_flutter/src/label/label_set.dart';
 import 'package:mapsforge_flutter/src/tile/tile_dimension.dart';
 import 'package:mapsforge_flutter/src/util/tile_helper.dart';
@@ -18,9 +17,12 @@ class LabelJobQueue extends ChangeNotifier {
 
   MapSize? _size;
 
-  final MemoryLabelCache _cache = MemoryLabelCache.create();
+  final MemoryLabelCache _cache;
 
-  static _CurrentJob? _currentJob;
+  /// Whether this queue made [_cache] and so disposes it.
+  final bool _ownsCache;
+
+  _CurrentJob? _currentJob;
 
   late final StreamSubscription<RenderChangedEvent> _renderChangedSubscription;
 
@@ -35,7 +37,10 @@ class LabelJobQueue extends ChangeNotifier {
 
   final Renderer renderer;
 
-  LabelJobQueue({required this.mapModel, required this.renderer}) {
+  /// Keeps the labels in [cache] if given, and leaves it to its owner to dispose. See [MemoryLabelCache].
+  LabelJobQueue({required this.mapModel, required this.renderer, MemoryLabelCache? cache})
+    : _cache = cache ?? MemoryLabelCache.create(),
+      _ownsCache = cache == null {
     _taskQueue = ParallelTaskQueue(_maxConcurrentTiles);
 
     _renderChangedSubscription = mapModel.renderChangedStream.listen((RenderChangedEvent event) {
@@ -92,7 +97,7 @@ class LabelJobQueue extends ChangeNotifier {
     // remove all jobs without throwing exceptions
     _taskQueue.clear();
     _taskQueue.cancel();
-    _cache.dispose();
+    if (_ownsCache) _cache.dispose();
   }
 
   /// Sets the current size of the mapview so that we know which and how many tiles we need for the whole view
