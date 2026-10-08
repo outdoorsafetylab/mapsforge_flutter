@@ -4,41 +4,32 @@ import 'dart:ui';
 import 'package:mapsforge_flutter/mapsforge.dart';
 import 'package:mapsforge_flutter/src/tile/tile_dimension.dart';
 import 'package:mapsforge_flutter_core/model.dart';
+import 'package:mapsforge_flutter_core/projection.dart';
 import 'package:mapsforge_flutter_core/utils.dart';
 
 class TileHelper {
-  /// Calculates all tiles needed to display the map on the available view area. Leave a margin so that we do not need to refetch everything for tiny position changes.
+  /// Tiles prepared around the visible ones, so that a small move does not show empty space.
+  static const int margin = 1;
+
+  /// The tiles a view of [screensize] (physical pixels) needs for [mapViewPosition]: `left`..`bottom` are the
+  /// tiles of [visibleArea], `minLeft`..`minBottom` add [margin] tiles around them.
   static TileDimension calculateTiles({required MapPosition mapViewPosition, required MapSize screensize}) {
-    // Start performance monitoring for this render cycle
     final session = PerformanceProfiler().startSession(category: "TileDimension");
-    Mappoint center = mapViewPosition.getCenter();
-    double halfWidth = screensize.width / 2;
-    double halfHeight = screensize.height / 2;
-    // In case of rotation use the max side for both width and height
-    halfWidth = max(halfWidth, halfHeight);
-    halfHeight = halfWidth;
-    int tileLeft = mapViewPosition.projection.pixelXToTileX(max(center.x - halfWidth, 0));
-    int tileRight = mapViewPosition.projection.pixelXToTileX(min(center.x + halfWidth, mapViewPosition.projection.mapsize.toDouble()));
-    int tileTop = mapViewPosition.projection.pixelYToTileY(max(center.y - halfHeight, 0));
-    int tileBottom = mapViewPosition.projection.pixelYToTileY(min(center.y + halfHeight, mapViewPosition.projection.mapsize.toDouble()));
-    // // rising from 0 to 45, then falling to 0 at 90°
-    // int degreeDiff = 45 - ((mapViewPosition.rotation) % 90 - 45).round().abs();
-    // if (degreeDiff > 5) {
-    // the map is rotated. To avoid empty corners enhance each side by one tile
-    int diff = (MapsforgeSettingsMgr().getDeviceScaleFactor().ceil());
-    int minTileLeft = max(tileLeft - diff, 0);
-    int minTileRight = min(tileRight + diff, Tile.getMaxTileNumber(mapViewPosition.zoomlevel));
-    int minTileTop = max(tileTop - diff, 0);
-    int minTileBottom = min(tileBottom + diff, Tile.getMaxTileNumber(mapViewPosition.zoomlevel));
-    //    }
-    // Complete performance profiling
+    MapRectangle visible = visibleArea(mapViewPosition, screensize.width, screensize.height);
+    PixelProjection projection = mapViewPosition.projection;
+    double mapsize = projection.mapsize.toDouble();
+    int tileLeft = projection.pixelXToTileX(min(max(visible.left, 0), mapsize));
+    int tileRight = projection.pixelXToTileX(min(max(visible.right, 0), mapsize));
+    int tileTop = projection.pixelYToTileY(min(max(visible.top, 0), mapsize));
+    int tileBottom = projection.pixelYToTileY(min(max(visible.bottom, 0), mapsize));
+    int maxTileNumber = Tile.getMaxTileNumber(mapViewPosition.zoomlevel);
     session.complete();
 
     return TileDimension(
-      minLeft: minTileLeft,
-      minRight: minTileRight,
-      minTop: minTileTop,
-      minBottom: minTileBottom,
+      minLeft: max(tileLeft - margin, 0),
+      minRight: min(tileRight + margin, maxTileNumber),
+      minTop: max(tileTop - margin, 0),
+      minBottom: min(tileBottom + margin, maxTileNumber),
       left: tileLeft,
       right: tileRight,
       top: tileTop,
@@ -46,7 +37,40 @@ class TileHelper {
     );
   }
 
-  /// Calculates all tiles needed to display the map on the available view area
+  /// The area of the map (in absolute pixel coordinates of the current zoom level) that a view of [width] x [height]
+  /// physical pixels shows.
+  ///
+  /// Derived from the transform chain of [TransformWidget]: the canvas is scaled by 1/deviceScaleFactor, pinch-zoomed
+  /// by [MapPosition.scale] around the screen point [MapPosition.focalPoint] (which stays put on screen) and rotated
+  /// around the screen center. Inverting that for the screen rectangle gives, in unrotated map pixels, a rectangle of
+  /// the view's size / scale whose center is displaced from the map center by
+  /// (focalPoint - screenCenter) * (1 - 1 / scale) * deviceScaleFactor; a rotated view turns that displacement along
+  /// and is covered by the circumscribed square.
+  static MapRectangle visibleArea(MapPosition mapPosition, double width, double height) {
+    double deviceScaleFactor = MapsforgeSettingsMgr().getDeviceScaleFactor();
+    double scale = mapPosition.scale;
+    double halfWidth = width / scale / 2;
+    double halfHeight = height / scale / 2;
+    // the focal point is in logical pixels
+    Offset screenCenter = Offset(width / deviceScaleFactor / 2, height / deviceScaleFactor / 2);
+    // Without a focal point TransformWidget scales around the screen center shifted by half the (still unscaled)
+    // canvas, which amounts to a focal point at screenCenter * (1 + 1 / deviceScaleFactor).
+    Offset focalPoint = mapPosition.focalPoint ?? screenCenter * (1 + 1 / deviceScaleFactor);
+    Offset shift = (focalPoint - screenCenter) * (1 - 1 / scale) * deviceScaleFactor;
+    double rotation = mapPosition.rotationRadian;
+    if (rotation != 0) {
+      // the screen is rotated by +rotation, so the map under it is turned back by -rotation
+      double cosine = cos(-rotation);
+      double sine = sin(-rotation);
+      shift = Offset(shift.dx * cosine - shift.dy * sine, shift.dx * sine + shift.dy * cosine);
+      halfWidth = halfHeight = sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
+    }
+    Mappoint center = mapPosition.getCenter();
+    double centerX = center.x + shift.dx;
+    double centerY = center.y + shift.dy;
+    return MapRectangle(centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight);
+  }
+
   static BoundingBox calculateBoundingBoxOfScreen({required MapPosition mapPosition, required Size screensize}) {
     Mappoint center = mapPosition.getCenter();
     double halfWidth = screensize.width / 2;

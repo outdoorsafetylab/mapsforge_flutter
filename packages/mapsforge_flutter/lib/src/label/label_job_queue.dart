@@ -62,8 +62,9 @@ class LabelJobQueue extends ChangeNotifier {
     if (_currentJob?.labelSet.mapPosition.latitude == position.latitude &&
         _currentJob?.labelSet.mapPosition.longitude == position.longitude &&
         _currentJob?.labelSet.mapPosition.zoomlevel == position.zoomlevel &&
-        _currentJob?.labelSet.mapPosition.indoorLevel == position.indoorLevel) {
-      // do not recalculate for rotation or scaling
+        _currentJob?.labelSet.mapPosition.indoorLevel == position.indoorLevel &&
+        _coversVisible(_currentJob!.tileDimension, TileHelper.calculateTiles(mapViewPosition: position, screensize: _size!))) {
+      // do not recalculate for rotation or scaling as long as the prepared blocks cover the view
       LabelSet labelSet = LabelSet(center: _currentJob!.labelSet.center, mapPosition: position, renderInfos: _currentJob!.labelSet.renderInfos);
       _CurrentJob myJob = _CurrentJob(_currentJob!.tileDimension, labelSet);
       _currentJob = myJob;
@@ -109,6 +110,14 @@ class LabelJobQueue extends ChangeNotifier {
   }
 
   MapSize? getSize() => _size;
+
+  /// Whether the blocks of [_range] x [_range] tiles prepared for [prepared] contain every tile [needed] shows.
+  bool _coversVisible(TileDimension prepared, TileDimension needed) {
+    return (prepared.left / _range).floor() * _range <= needed.left &&
+        (prepared.right / _range).floor() * _range + _range - 1 >= needed.right &&
+        (prepared.top / _range).floor() * _range <= needed.top &&
+        (prepared.bottom / _range).floor() * _range + _range - 1 >= needed.bottom;
+  }
 
   Future<void> _positionEvent(MapPosition position, TileDimension tileDimension) async {
     final session = PerformanceProfiler().startSession(category: "LabelJobQueue");

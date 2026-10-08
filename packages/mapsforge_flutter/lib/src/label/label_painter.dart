@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:mapsforge_flutter/mapsforge.dart';
 import 'package:mapsforge_flutter/src/label/label_job_queue.dart';
 import 'package:mapsforge_flutter/src/label/label_set.dart';
+import 'package:mapsforge_flutter/src/util/tile_helper.dart';
 import 'package:mapsforge_flutter_core/model.dart';
 import 'package:mapsforge_flutter_core/projection.dart';
 import 'package:mapsforge_flutter_core/utils.dart';
@@ -41,36 +42,13 @@ class LabelPainter extends CustomPainter {
 
   /// The area of the map (in absolute pixel coordinates of the current zoom level) that is visible on screen.
   ///
-  /// [size] is the size of the painter in logical pixels. Derived from the transform chain of [TransformWidget]:
-  /// the canvas is scaled by 1/deviceScaleFactor, pinch-zoomed by [MapPosition.scale] around the screen point
-  /// [MapPosition.focalPoint] (which stays put on screen) and rotated around the screen center. Inverting that
-  /// for the screen rectangle gives, in unrotated map pixels, a rectangle of size * deviceScaleFactor / scale
-  /// whose center is displaced from the map center by (focalPoint - screenCenter) * (1 - 1 / scale) * deviceScaleFactor;
-  /// a rotated view turns that displacement along and is covered by the circumscribed square.
-  /// The result is padded a bit since label boundaries are estimates.
+  /// [size] is the size of the painter in logical pixels; see [TileHelper.visibleArea]. The result is padded a bit
+  /// since label boundaries are estimates.
   static MapRectangle visibleBoundary(MapPosition mapPosition, Size size) {
     double deviceScaleFactor = MapsforgeSettingsMgr().getDeviceScaleFactor();
-    double scale = mapPosition.scale;
-    double halfWidth = size.width * deviceScaleFactor / scale / 2;
-    double halfHeight = size.height * deviceScaleFactor / scale / 2;
-    Offset screenCenter = Offset(size.width / 2, size.height / 2);
-    // Without a focal point TransformWidget scales around the screen center shifted by half the (still unscaled)
-    // canvas, which amounts to a focal point at screenCenter * (1 + 1 / deviceScaleFactor).
-    Offset focalPoint = mapPosition.focalPoint ?? screenCenter * (1 + 1 / deviceScaleFactor);
-    Offset shift = (focalPoint - screenCenter) * (1 - 1 / scale) * deviceScaleFactor;
-    double rotation = mapPosition.rotationRadian;
-    if (rotation != 0) {
-      // the screen is rotated by +rotation, so the map under it is turned back by -rotation
-      double cosine = cos(-rotation);
-      double sine = sin(-rotation);
-      shift = Offset(shift.dx * cosine - shift.dy * sine, shift.dx * sine + shift.dy * cosine);
-      halfWidth = halfHeight = sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
-    }
-    double padding = max(halfWidth, halfHeight) * 0.1;
-    Mappoint center = mapPosition.getCenter();
-    double centerX = center.x + shift.dx;
-    double centerY = center.y + shift.dy;
-    return MapRectangle(centerX - halfWidth - padding, centerY - halfHeight - padding, centerX + halfWidth + padding, centerY + halfHeight + padding);
+    MapRectangle visible = TileHelper.visibleArea(mapPosition, size.width * deviceScaleFactor, size.height * deviceScaleFactor);
+    double padding = max(visible.getWidth(), visible.getHeight()) / 2 * 0.1;
+    return MapRectangle(visible.left - padding, visible.top - padding, visible.right + padding, visible.bottom + padding);
   }
 
   /// The area (in absolute map pixels) that painting [renderInfo] can touch, for the visibility check.
