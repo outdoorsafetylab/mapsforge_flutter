@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:ecache/ecache.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:mapsforge_flutter/mapsforge.dart';
 import 'package:mapsforge_flutter/src/tile/tile_dimension.dart';
@@ -23,13 +22,10 @@ class TileJobQueue extends ChangeNotifier {
 
   final Renderer renderer;
 
-  final _cache = LruCache<Tile, TilePicture?>(
-    onEvict: (tile, picture) {
-      picture?.dispose();
-    },
-    capacity: 2000,
-    name: "TileJobQueue",
-  );
+  final TileCache _cache;
+
+  /// Whether this queue made [_cache] and so disposes it.
+  final bool _ownsCache;
 
   _CurrentJob? _currentJob;
 
@@ -44,7 +40,8 @@ class TileJobQueue extends ChangeNotifier {
   /// Maximum number of concurrent tile loading operations
   static const int _maxConcurrentTiles = 4;
 
-  TileJobQueue({required this.mapModel, required this.renderer}) {
+  /// Renders into [cache] if given, and leaves it to its owner to dispose. See [TileCache].
+  TileJobQueue({required this.mapModel, required this.renderer, TileCache? cache}) : _cache = cache ?? TileCache(), _ownsCache = cache == null {
     _taskQueue = ParallelTaskQueue(_maxConcurrentTiles);
 
     _renderChangedSubscription = mapModel.renderChangedStream.listen((RenderChangedEvent event) {
@@ -106,7 +103,7 @@ class TileJobQueue extends ChangeNotifier {
     // remove all jobs without throwing exceptions
     _taskQueue.clear();
     _taskQueue.cancel();
-    _cache.dispose();
+    if (_ownsCache) _cache.dispose();
   }
 
   TileSet? get tileSet => _currentJob?.tileSet;
