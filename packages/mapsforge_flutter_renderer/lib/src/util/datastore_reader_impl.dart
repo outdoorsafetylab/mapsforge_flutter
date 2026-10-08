@@ -11,6 +11,9 @@ import 'package:mapsforge_flutter_rendertheme/rendertheme.dart';
 /// This is crucial for performance, as it prevents the UI thread from being
 /// blocked by the CPU-intensive work of reading map files and matching them
 /// against a render theme.
+///
+/// The datastore is copied into the isolate when it starts, so it must be sendable: create it but do not read from
+/// it before (a [Datastore] that holds open files cannot be sent). The isolate runs until [dispose].
 class IsolateDatastoreReader implements DatastoreReader {
   static DatastoreReaderImpl? _reader;
 
@@ -34,6 +37,11 @@ class IsolateDatastoreReader implements DatastoreReader {
 
   @pragma('vm:entry-point')
   static Future _acceptRequestsStatic(Object request) async {
+    if (request is DatastoreReaderIsolateDisposeRequest) {
+      _reader?.datastore.dispose();
+      _reader = null;
+      return null;
+    }
     DatastoreReaderIsolateRequest r = request as DatastoreReaderIsolateRequest;
     if (r.rightLower == null) return _reader!.read(r.tile, r.renderthemeLevel);
     return _reader!.readLabels(r.tile, r.rightLower!, r.renderthemeLevel);
@@ -48,6 +56,17 @@ class IsolateDatastoreReader implements DatastoreReader {
   Future<LayerContainerCollection?> readLabels(Tile leftUpper, Tile rightLower, RenderthemeZoomlevel renderthemeLevel) async {
     return _isolateInstance.compute(DatastoreReaderIsolateRequest(leftUpper, renderthemeLevel, rightLower: rightLower));
   }
+
+  /// Lets the isolate dispose its copy of the datastore (closing the files it opened), then kills it. Reads still
+  /// pending fail with a [StateError].
+  Future<void> dispose() async {
+    try {
+      await _isolateInstance.compute(DatastoreReaderIsolateDisposeRequest()).timeout(const Duration(seconds: 1));
+    } catch (_) {
+      // the isolate is killed anyway
+    }
+    _isolateInstance.dispose();
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -58,6 +77,11 @@ class DatastoreReaderIsolateInitRequest {
 
   DatastoreReaderIsolateInitRequest(this.datastore);
 }
+//////////////////////////////////////////////////////////////////////////////
+
+/// A message to dispose the datastore in the isolate before the isolate is killed.
+class DatastoreReaderIsolateDisposeRequest {}
+
 //////////////////////////////////////////////////////////////////////////////
 
 /// A message to request the reading of map data in the isolate.
