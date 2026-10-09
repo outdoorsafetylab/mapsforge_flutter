@@ -78,7 +78,10 @@ class JobLabels {
       }
     });
     candidates.sort(_Candidate.compare);
-    final SpatialBoundaryIndex<RenderInfo> spatialIndex = SpatialBoundaryIndex(cellSize: 16.0);
+    // The index only narrows down whom to check, the result is the same for any cell size. With the reader's 16 pixels
+    // a label of 200 x 30 pixels touches 26 cells, and on a Pixel 5 a merge of 450 labels took up to 50 ms; with the
+    // default (256) none took more than 6 ms.
+    final SpatialBoundaryIndex<RenderInfo> spatialIndex = SpatialBoundaryIndex();
     List<RenderInfo> output = [];
     for (_Candidate candidate in candidates) {
       if (!spatialIndex.hasCollision(candidate.info, candidate.boundary)) {
