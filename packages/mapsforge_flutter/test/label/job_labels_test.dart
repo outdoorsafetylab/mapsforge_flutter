@@ -53,6 +53,9 @@ class _BlockRenderer extends Renderer {
 
   final Map<Tile, Completer<void>> pending = {};
 
+  /// The blocks asked for, as (left upper, right lower).
+  final List<(Tile, Tile?)> requests = [];
+
   _BlockRenderer(this.labelsFor);
 
   /// Lets the request for the block at [leftUpper] finish.
@@ -63,6 +66,7 @@ class _BlockRenderer extends Renderer {
 
   @override
   Future<JobResult> retrieveLabels(JobRequest jobRequest) async {
+    requests.add((jobRequest.tile, jobRequest.rightLower));
     Completer<void> completer = pending.putIfAbsent(jobRequest.tile, () => Completer<void>());
     await completer.future;
     return JobResult.normalLabels(RenderInfoCollection(labelsFor(jobRequest.tile)));
@@ -280,6 +284,35 @@ void main() {
 
       queue.dispose();
       await mapModel.dispose();
+    });
+  });
+
+  group('label blocks', () {
+    Future<List<(Tile, Tile?)>> requestsAt(int zoom) async {
+      _BlockRenderer renderer = _BlockRenderer((Tile leftUpper) => const []);
+      MapModel mapModel = MapModel(renderer: renderer);
+      LabelJobQueue queue = LabelJobQueue(mapModel: mapModel, renderer: renderer);
+      queue.setSize(1080, 1900);
+      queue.setPosition(MapPosition(25.05, 121.5, zoom));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      queue.dispose();
+      await mapModel.dispose();
+      return renderer.requests;
+    }
+
+    test('are 3 x 3 tiles up to zoom 13 and 5 x 5 above', () async {
+      for (int zoom in [10, 11, 12, 13, 14, 15, 17]) {
+        int range = zoom <= 13 ? 3 : 5;
+        expect(LabelJobQueue.rangeAt(zoom), range);
+        List<(Tile, Tile?)> requests = await requestsAt(zoom);
+        expect(requests, isNotEmpty);
+        for (final (Tile leftUpper, Tile? rightLower) in requests) {
+          expect(leftUpper.tileX % range, 0, reason: 'z$zoom $leftUpper');
+          expect(leftUpper.tileY % range, 0, reason: 'z$zoom $leftUpper');
+          expect(rightLower!.tileX - leftUpper.tileX, range - 1, reason: 'z$zoom');
+          expect(rightLower.tileY - leftUpper.tileY, range - 1, reason: 'z$zoom');
+        }
+      }
     });
   });
 }
