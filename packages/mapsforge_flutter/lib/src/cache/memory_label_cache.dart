@@ -16,7 +16,7 @@ class MemoryLabelCache {
 
   late LruCache<Tile, RenderInfoCollection> _cache;
 
-  /// [capacity] is in blocks of labels, each of which covers 5 x 5 tiles.
+  /// [capacity] is in blocks of labels, each of which covers 3 x 3 or 5 x 5 tiles (see [LabelJobQueue.rangeAt]).
   factory MemoryLabelCache.create({int capacity = 500}) {
     MemoryLabelCache result = MemoryLabelCache._(capacity);
     _instances.add(result);
