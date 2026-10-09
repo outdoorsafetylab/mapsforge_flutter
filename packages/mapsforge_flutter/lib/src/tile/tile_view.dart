@@ -79,7 +79,11 @@ class _TileViewState extends State<TileView> {
             // We do not have a position yet or we wait for processing of the first tiles
             //          return const SizedBox.expand();
           },
-          child: CustomPaint(foregroundPainter: TilePainter(jobQueue), child: const SizedBox.expand()),
+          // A layer of its own: painting the tiles is expensive, and without it every repaint of anything else in
+          // the same layer (a marker, a scale bar redrawn on every compass event) painted them again as well.
+          child: RepaintBoundary(
+            child: CustomPaint(foregroundPainter: TilePainter(jobQueue), child: const SizedBox.expand()),
+          ),
         );
       },
     );
