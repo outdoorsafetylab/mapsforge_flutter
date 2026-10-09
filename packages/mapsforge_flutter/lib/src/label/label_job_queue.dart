@@ -26,8 +26,16 @@ class LabelJobQueue extends ChangeNotifier {
 
   late final StreamSubscription<RenderChangedEvent> _renderChangedSubscription;
 
-  /// We split the labels into a 5 by 5 tiles matrix and retrieve the labels for these 25 tiles at once.
-  final int _range = 5;
+  /// The labels are retrieved in blocks of [rangeAt] x [rangeAt] tiles, one request per block.
+  ///
+  /// At low zoom a block of 5 x 5 tiles covers so much ground that reading it takes many seconds (on a Pixel 5 at zoom
+  /// 11 the first labels showed after 5 to 8 seconds, all of them after 11 to 17), so up to [smallBlockMaxZoom] the
+  /// blocks are 3 x 3 (the first labels after less than a second, all after 3 to 9). Above, the 5 x 5 blocks stay:
+  /// there one request is not what makes filling the view slow.
+  static int rangeAt(int zoomlevel) => zoomlevel <= smallBlockMaxZoom ? 3 : 5;
+
+  /// The highest zoom level with blocks of 3 x 3 tiles, see [rangeAt].
+  static const int smallBlockMaxZoom = 13;
 
   /// Parallel task queue for tile loading optimization
   late final TaskQueue _taskQueue;
@@ -68,7 +76,7 @@ class LabelJobQueue extends ChangeNotifier {
         _currentJob?.labelSet.mapPosition.longitude == position.longitude &&
         _currentJob?.labelSet.mapPosition.zoomlevel == position.zoomlevel &&
         _currentJob?.labelSet.mapPosition.indoorLevel == position.indoorLevel &&
-        _coversVisible(_currentJob!.tileDimension, TileHelper.calculateTiles(mapViewPosition: position, screensize: _size!))) {
+        _coversVisible(_currentJob!.tileDimension, TileHelper.calculateTiles(mapViewPosition: position, screensize: _size!), position.zoomlevel)) {
       // do not recalculate for rotation or scaling as long as the job covers the view, blocks still arriving go to the
       // same labels
       LabelSet labelSet = LabelSet(center: _currentJob!.labelSet.center, mapPosition: position, jobLabels: _currentJob!.labelSet.jobLabels);
@@ -117,15 +125,16 @@ class LabelJobQueue extends ChangeNotifier {
 
   MapSize? getSize() => _size;
 
-  /// Whether the job prepared for [prepared] covers every tile [needed] shows: its blocks of [_range] x [_range] tiles
-  /// were read for them, and its labels were merged over them (the tiles of [prepared] plus the margin, see
+  /// Whether the job prepared for [prepared] covers every tile [needed] shows: its blocks of [rangeAt] x [rangeAt]
+  /// tiles were read for them, and its labels were merged over them (the tiles of [prepared] plus the margin, see
   /// [JobLabels.area]).
-  bool _coversVisible(TileDimension prepared, TileDimension needed) {
+  bool _coversVisible(TileDimension prepared, TileDimension needed, int zoomlevel) {
+    int range = rangeAt(zoomlevel);
     return prepared.coversVisible(needed) &&
-        (prepared.left / _range).floor() * _range <= needed.left &&
-        (prepared.right / _range).floor() * _range + _range - 1 >= needed.right &&
-        (prepared.top / _range).floor() * _range <= needed.top &&
-        (prepared.bottom / _range).floor() * _range + _range - 1 >= needed.bottom;
+        (prepared.left / range).floor() * range <= needed.left &&
+        (prepared.right / range).floor() * range + range - 1 >= needed.right &&
+        (prepared.top / range).floor() * range <= needed.top &&
+        (prepared.bottom / range).floor() * range + range - 1 >= needed.bottom;
   }
 
   Future<void> _positionEvent(MapPosition position, TileDimension tileDimension) async {
@@ -140,12 +149,13 @@ class LabelJobQueue extends ChangeNotifier {
     LabelSet labelSet = LabelSet(center: position.getCenter(), mapPosition: position, jobLabels: JobLabels(area));
     _CurrentJob myJob = _CurrentJob(tileDimension, labelSet);
     _currentJob = myJob;
-    // find a common base (multiplies of 5) to start with
+    // blocks start at multiples of the range
     int maxTileNbr = Tile.getMaxTileNumber(position.zoomlevel);
+    int range = rangeAt(position.zoomlevel);
     List<Tile> missingTiles = [];
     Map<Tile, RenderInfoCollection> cached = {};
-    for (int top = (tileDimension.top / _range).floor() * _range; top <= tileDimension.bottom; top += _range) {
-      for (int left = (tileDimension.left / _range).floor() * _range; left <= tileDimension.right; left += _range) {
+    for (int top = (tileDimension.top / range).floor() * range; top <= tileDimension.bottom; top += range) {
+      for (int left = (tileDimension.left / range).floor() * range; left <= tileDimension.right; left += range) {
         Tile leftUpper = Tile(left, top, position.zoomlevel, position.indoorLevel);
         try {
           RenderInfoCollection? collection = _cache.get(leftUpper);
@@ -177,7 +187,8 @@ class LabelJobQueue extends ChangeNotifier {
   Future<void> _produceLabel(_CurrentJob myJob, int left, int top, MapPosition position, int maxTileNbr) async {
     if (myJob.aborted) return;
     Tile leftUpper = Tile(left, top, position.zoomlevel, position.indoorLevel);
-    Tile rightLower = Tile(min(left + _range - 1, maxTileNbr), min(top + _range - 1, maxTileNbr), position.zoomlevel, position.indoorLevel);
+    int range = rangeAt(position.zoomlevel);
+    Tile rightLower = Tile(min(left + range - 1, maxTileNbr), min(top + range - 1, maxTileNbr), position.zoomlevel, position.indoorLevel);
     try {
       RenderInfoCollection collection = await _cache.getOrProduce(leftUpper, rightLower, (Tile tile) async {
         JobResult result = await renderer.retrieveLabels(JobRequest(leftUpper, rightLower));
