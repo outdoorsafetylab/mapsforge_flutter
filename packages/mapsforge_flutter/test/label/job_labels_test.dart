@@ -314,5 +314,34 @@ void main() {
         }
       }
     });
+
+    test('at low zoom a view reaching beyond the 3 x 3 blocks starts another job, even within the job tiles', () async {
+      // tile 5001 starts a 3 x 3 block (5001..5003) and is inside a 5 x 5 one (5000..5004): blocks of the wrong size
+      // would still cover the pinched view
+      const int zoom = 13;
+      const double size = 300;
+      final double tileSize = MapsforgeSettingsMgr().tileSize;
+      final ILatLong center = PixelProjection(zoom).pixelToLatLong(5002.5 * tileSize, 5002.5 * tileSize);
+      final MapPosition position = MapPosition(center.latitude, center.longitude, zoom);
+      _BlockRenderer renderer = _BlockRenderer((Tile leftUpper) => const []);
+      MapModel mapModel = MapModel(renderer: renderer);
+      LabelJobQueue queue = LabelJobQueue(mapModel: mapModel, renderer: renderer);
+      queue.setSize(size, size);
+      queue.setPosition(position);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(renderer.requests.map((r) => r.$1), [Tile(5001, 5001, zoom, 0)]);
+      JobLabels jobLabels = queue.labelSet.jobLabels;
+
+      // 1.7 tiles around the center: tiles 5000..5004, the job's tiles with the margin, beyond the 3 x 3 block
+      MapPosition pinched = position.scaleAround(const Offset(size / 2, size / 2), size / (3.4 * tileSize));
+      queue.setPosition(pinched);
+      expect(queue.labelSet.jobLabels, isNot(same(jobLabels)));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // the blocks around the old one are read now (four at a time, the old request still occupies one)
+      expect(renderer.requests.map((r) => r.$1), contains(Tile(4998, 4998, zoom, 0)));
+
+      queue.dispose();
+      await mapModel.dispose();
+    });
   });
 }
