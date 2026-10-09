@@ -85,7 +85,11 @@ class _LabelViewState extends State<LabelView> {
               child: child!,
             );
           },
-          child: CustomPaint(foregroundPainter: LabelPainter(jobQueue), child: const SizedBox.expand()),
+          // A layer of its own: painting the labels is expensive, and without it every repaint of anything else in
+          // the same layer (a marker, a scale bar redrawn on every compass event) painted them again as well.
+          child: RepaintBoundary(
+            child: CustomPaint(foregroundPainter: LabelPainter(jobQueue), child: const SizedBox.expand()),
+          ),
         );
       },
     );
