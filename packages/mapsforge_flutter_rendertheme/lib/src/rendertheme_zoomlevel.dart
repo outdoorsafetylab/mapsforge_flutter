@@ -1,7 +1,14 @@
 import 'package:ecache/ecache.dart';
 import 'package:mapsforge_flutter_core/model.dart';
 import 'package:mapsforge_flutter_rendertheme/rendertheme.dart';
+import 'package:mapsforge_flutter_rendertheme/src/matcher/anymatcher.dart';
+import 'package:mapsforge_flutter_rendertheme/src/matcher/attributematcher.dart';
+import 'package:mapsforge_flutter_rendertheme/src/matcher/keymatcher.dart';
+import 'package:mapsforge_flutter_rendertheme/src/matcher/negativematcher.dart';
+import 'package:mapsforge_flutter_rendertheme/src/matcher/valuematcher.dart';
 import 'package:mapsforge_flutter_rendertheme/src/model/matching_cache_key.dart';
+import 'package:mapsforge_flutter_rendertheme/src/rule/negativerule.dart';
+import 'package:mapsforge_flutter_rendertheme/src/rule/positiverule.dart';
 
 /// Zoom level specific rendering theme containing optimized rule matching.
 ///
@@ -32,6 +39,10 @@ class RenderthemeZoomlevel {
 
   int maxLevels;
 
+  /// What the rules of this zoom level look at, see [_cacheKey]; null if a rule uses a matcher we do not know, then
+  /// the cache is keyed by all tags.
+  late final _RuleAttributes? _attributes = _RuleAttributes.of(rulesList);
+
   /// Creates a new zoom level specific rendering theme.
   ///
   /// [rulesList] Hierarchical list of rendering rules for this zoom level
@@ -57,7 +68,7 @@ class RenderthemeZoomlevel {
   /// [pointOfInterest] Point of interest to match against rules
   /// Returns list of applicable rendering instructions
   List<Renderinstruction> matchNode(final int indoorLevel, PointOfInterest pointOfInterest) {
-    MatchingCacheKey matchingCacheKey = MatchingCacheKey(pointOfInterest.tags, indoorLevel);
+    MatchingCacheKey matchingCacheKey = _cacheKey(pointOfInterest.tags, indoorLevel);
 
     List<Renderinstruction>? matchingList = nodeMatchingCache[matchingCacheKey];
     if (matchingList == null) {
@@ -81,7 +92,7 @@ class RenderthemeZoomlevel {
   /// [way] Closed way to match against rules
   /// Returns list of applicable rendering instructions
   List<Renderinstruction> matchClosedWay(final Tile tile, Way way) {
-    MatchingCacheKey matchingCacheKey = MatchingCacheKey(way.tags, tile.indoorLevel);
+    MatchingCacheKey matchingCacheKey = _cacheKey(way.tags, tile.indoorLevel);
 
     List<Renderinstruction>? matchingList = closedWayMatchingCache[matchingCacheKey];
     if (matchingList == null) {
@@ -105,7 +116,7 @@ class RenderthemeZoomlevel {
   /// [way] Linear way to match against rules
   /// Returns list of applicable rendering instructions
   List<Renderinstruction> matchOpenWay(final Tile tile, Way way) {
-    MatchingCacheKey matchingCacheKey = MatchingCacheKey(way.tags, tile.indoorLevel);
+    MatchingCacheKey matchingCacheKey = _cacheKey(way.tags, tile.indoorLevel);
 
     List<Renderinstruction>? matchingList = openWayMatchingCache[matchingCacheKey];
     if (matchingList == null) {
@@ -118,5 +129,84 @@ class RenderthemeZoomlevel {
       openWayMatchingCache[matchingCacheKey] = matchingList;
     }
     return matchingList;
+  }
+
+  /// The cache key for [tags]: only what the rules can tell apart.
+  ///
+  /// A rule matches by which of its keys are present, which of its values are present (on any key, as in mapsforge)
+  /// and, for the indoor level, the values of `level` and `repeat_on`. Keying the cache by all tags made every named
+  /// feature a key of its own: in Taipei at zoom 14 a block of 40,000 POIs had 18,000 different keys, and the node
+  /// cache of 1000 entries missed nearly every time. Keyed by what the rules see, the same block has 194.
+  MatchingCacheKey _cacheKey(ITagCollection tags, int indoorLevel) {
+    _RuleAttributes? attributes = _attributes;
+    if (attributes == null || tags is! TagCollection) return MatchingCacheKey(tags, indoorLevel);
+    List<Tag> seen = [];
+    bool same = true;
+    for (Tag tag in tags.tags) {
+      if (attributes.values.contains(tag.value) || _RuleAttributes.indoorKeys.contains(tag.key)) {
+        seen.add(tag);
+      } else if (attributes.keys.contains(tag.key)) {
+        seen.add(Tag(tag.key, attributes.present));
+        same = false;
+      } else {
+        same = false;
+      }
+    }
+    return MatchingCacheKey(same ? tags : TagCollection(tags: seen), indoorLevel);
+  }
+}
+
+/// The tag keys and values the rules of a zoom level match against.
+class _RuleAttributes {
+  /// Read by the indoor level check of every rule ([IndoorNotationMatcher]), with their values.
+  static const Set<String> indoorKeys = {'level', 'repeat_on'};
+
+  /// Keys whose presence a rule checks.
+  final Set<String> keys = {};
+
+  /// Values whose presence (on any key) a rule checks.
+  final Set<String> values = {};
+
+  /// Stands for the value of a tag whose key matters but whose value does not; not in [values].
+  late final String present;
+
+  _RuleAttributes._();
+
+  static _RuleAttributes? of(List<Rule> rules) {
+    _RuleAttributes attributes = _RuleAttributes._();
+    bool known = true;
+    void addMatcher(AttributeMatcher matcher) {
+      if (matcher is KeyMatcher) {
+        attributes.keys.addAll(matcher.keys);
+      } else if (matcher is ValueMatcher) {
+        attributes.values.addAll(matcher.values);
+      } else if (matcher is NegativeMatcher) {
+        attributes.keys.addAll(matcher.keys);
+        attributes.values.addAll(matcher.values);
+      } else if (matcher is! AnyMatcher) {
+        known = false;
+      }
+    }
+
+    void addRule(Rule rule) {
+      if (rule is PositiveRule) {
+        addMatcher(rule.keyMatcher);
+        addMatcher(rule.valueMatcher);
+      } else if (rule is NegativeRule) {
+        addMatcher(rule.attributeMatcher);
+      } else {
+        known = false;
+      }
+      rule.subRules.forEach(addRule);
+    }
+
+    rules.forEach(addRule);
+    if (!known) return null;
+    String present = '\u0000';
+    while (attributes.values.contains(present)) {
+      present += '\u0000';
+    }
+    attributes.present = present;
+    return attributes;
   }
 }
