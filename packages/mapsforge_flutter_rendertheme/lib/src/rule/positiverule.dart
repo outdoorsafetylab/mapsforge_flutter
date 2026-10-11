@@ -1,8 +1,6 @@
 import 'package:mapsforge_flutter_core/model.dart';
 import 'package:mapsforge_flutter_rendertheme/src/matcher/attributematcher.dart';
 import 'package:mapsforge_flutter_rendertheme/src/matcher/indoornotationmatcher.dart';
-import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/renderinstruction_node.dart';
-import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/renderinstruction_way.dart';
 
 import 'rule.dart';
 
@@ -24,26 +22,9 @@ class PositiveRule extends Rule {
   @override
   PositiveRule? forZoomlevel(int zoomlevel, Set<String>? categories, int Function() getMaxLevel) {
     if (categories != null && cat != null && !categories.contains(cat)) return null;
-    if (!matchesForZoomLevel(zoomlevel)) {
-      return null;
-    }
-
-    List<RenderinstructionNode> renderinstructionNodes = [];
-    List<RenderinstructionWay> renderinstructionOpenWays = [];
-    List<RenderinstructionWay> renderinstructionClosedWays = [];
-    if (super.renderinstructionNodes.isNotEmpty || super.renderinstructionOpenWays.isNotEmpty || super.renderinstructionClosedWays.isNotEmpty) {
-      // only retrieve a new level if we need it
-      int maxLevel = getMaxLevel();
-      for (var renderInstruction in super.renderinstructionNodes) {
-        renderinstructionNodes.add(renderInstruction.forZoomlevel(zoomlevel, maxLevel));
-      }
-      for (var renderInstruction in super.renderinstructionOpenWays) {
-        renderinstructionOpenWays.add(renderInstruction.forZoomlevel(zoomlevel, maxLevel));
-      }
-      for (var renderInstruction in super.renderinstructionClosedWays) {
-        renderinstructionClosedWays.add(renderInstruction.forZoomlevel(zoomlevel, maxLevel));
-      }
-    }
+    var instructions = instructionsForZoomlevel(zoomlevel, getMaxLevel);
+    if (instructions == null) return null;
+    var (nodes: renderinstructionNodes, openWays: renderinstructionOpenWays, closedWays: renderinstructionClosedWays) = instructions;
     List<Rule> subRules = [];
     for (var subRule in super.subRules) {
       Rule? rule = subRule.forZoomlevel(zoomlevel, categories, getMaxLevel);
@@ -69,7 +50,9 @@ class PositiveRule extends Rule {
 
   @override
   bool matches(TagCollection tags, int indoorLevel) {
-    return IndoorNotationMatcher.isOutdoorOrMatchesIndoorLevel(tags, indoorLevel) && keyMatcher.matchesTagList(tags) && valueMatcher.matchesTagList(tags);
+    return IndoorNotationMatcher.isOutdoorOrMatchesIndoorLevel(tags, indoorLevel) &&
+        keyMatcher.matchesTagList(tags) &&
+        valueMatcher.matchesTagList(tags);
   }
 
   @override

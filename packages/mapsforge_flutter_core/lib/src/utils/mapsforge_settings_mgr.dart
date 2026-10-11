@@ -67,6 +67,19 @@ class MapsforgeSettingsMgr {
 
   late double maxTextWidth;
 
+  /// Extra scale factor for the elevations of contour lines: texts along ways (pathText) showing the key "ele".
+  ///
+  /// Applied on top of the font scale factor when the render theme is parsed. Their stroke and repeat distances are
+  /// left alone.
+  double elevationPathTextScale = 1;
+
+  /// The elevations of contour lines (texts along ways showing the key "ele") follow the render theme's rules for
+  /// this many zoomlevels below the one rendered; everything else follows the rules for the zoomlevel rendered.
+  ///
+  /// A theme made for bigger tiles, shown with smaller tiles at the same pixel density, labels the ground of zoomlevel
+  /// N - 1 as densely as intended; an offset of 1 keeps that density.
+  int elevationPathTextZoomOffset = 0;
+
   /// Default maximum zoom level supported by the rendering system.
   /// Can be overridden by specific map implementations.
   static const int defaultMaxZoomlevel = 25;

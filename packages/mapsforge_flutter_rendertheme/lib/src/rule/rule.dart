@@ -1,5 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:mapsforge_flutter_core/model.dart';
+import 'package:mapsforge_flutter_core/utils.dart';
 import 'package:mapsforge_flutter_rendertheme/renderinstruction.dart';
 import 'package:mapsforge_flutter_rendertheme/src/rule/symbol_searcher.dart';
 
@@ -26,7 +27,8 @@ abstract class Rule implements SymbolSearcher {
     required this.renderinstructionClosedWays,
   }) : assert(
          subRules.isNotEmpty ||
-             (subRules.isEmpty && (renderinstructionNodes.isNotEmpty || renderinstructionOpenWays.isNotEmpty || renderinstructionClosedWays.isNotEmpty)),
+             (subRules.isEmpty &&
+                 (renderinstructionNodes.isNotEmpty || renderinstructionOpenWays.isNotEmpty || renderinstructionClosedWays.isNotEmpty)),
        ) {
     for (var rule in subRules) {
       rule.parent = this;
@@ -49,6 +51,36 @@ abstract class Rule implements SymbolSearcher {
   }
 
   Rule? forZoomlevel(int zoomlevel, Set<String>? categories, int Function() Function);
+
+  /// The render instructions of this rule (not of its subrules) prepared for [zoomlevel], or null if this rule does
+  /// not take part in [zoomlevel].
+  ///
+  /// The elevations of contour lines take part if the rule's zoomlevel range holds zoomlevel minus
+  /// [MapsforgeSettingsMgr.elevationPathTextZoomOffset], all other instructions if it holds [zoomlevel]. Either way
+  /// they are prepared for [zoomlevel], the one rendered.
+  ({List<RenderinstructionNode> nodes, List<RenderinstructionWay> openWays, List<RenderinstructionWay> closedWays})? instructionsForZoomlevel(
+    int zoomlevel,
+    int Function() getMaxLevel,
+  ) {
+    bool forOthers = matchesForZoomLevel(zoomlevel);
+    bool forElevations = matchesForZoomLevel(zoomlevel - MapsforgeSettingsMgr().elevationPathTextZoomOffset);
+    if (!forOthers && !forElevations) return null;
+
+    bool takesPart(Object renderinstruction) =>
+        renderinstruction is RenderinstructionPolylineText && renderinstruction.isElevationText ? forElevations : forOthers;
+    List<RenderinstructionNode> nodes = renderinstructionNodes.where(takesPart).toList();
+    List<RenderinstructionWay> openWays = renderinstructionOpenWays.where(takesPart).toList();
+    List<RenderinstructionWay> closedWays = renderinstructionClosedWays.where(takesPart).toList();
+    if (nodes.isEmpty && openWays.isEmpty && closedWays.isEmpty) return (nodes: nodes, openWays: openWays, closedWays: closedWays);
+
+    // only retrieve a new level if we need it
+    int maxLevel = getMaxLevel();
+    return (
+      nodes: [for (var renderInstruction in nodes) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
+      openWays: [for (var renderInstruction in openWays) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
+      closedWays: [for (var renderInstruction in closedWays) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
+    );
+  }
 
   void apply(RuleVisitor v) {
     v.apply(this);
