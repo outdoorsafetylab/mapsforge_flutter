@@ -106,23 +106,16 @@ class RenderinstructionPolylineText extends Renderinstruction
     XmlUtils.checkMandatoryAttribute(rootElement.name.toString(), Renderinstruction.K, textKey);
   }
 
+  /// The box around the text as it is painted: centred on the anchor and rotated with it.
   @override
   MapRectangle getBoundary(RenderInfo renderInfo) {
-    MapSize textSize = getEstimatedTextBoundary(renderInfo.caption ?? "", strokeWidth);
-    if (renderInfo is RenderInfoNode) {
-      if (!_isBoxMoreHorizontal(renderInfo.rotateRadians)) {
-        textSize = MapSize(width: textSize.height, height: textSize.width);
-      }
-    }
-    return MapRectangle(-textSize.width / 2, -textSize.height / 2, textSize.width / 2, textSize.height / 2);
-  }
-
-  bool _isBoxMoreHorizontal(double rotationRadians) {
-    // Normalize rotation to [0, π/2] range
-    double normalizedRotation = (rotationRadians.abs()) % (pi / 2);
-
-    // If closer to 0, it's horizontal; if closer to π/2, it's vertical
-    return normalizedRotation < pi / 4;
+    MapSize textSize = getEstimatedPathTextBoundary(renderInfo.caption ?? "", strokeWidth);
+    double theta = renderInfo is RenderInfoNode ? renderInfo.rotateRadians : 0;
+    double c = cos(theta).abs();
+    double s = sin(theta).abs();
+    double width = textSize.width * c + textSize.height * s;
+    double height = textSize.width * s + textSize.height * c;
+    return MapRectangle(-width / 2, -height / 2, width / 2, height / 2);
   }
 
   @override
@@ -149,32 +142,28 @@ class RenderinstructionPolylineText extends Renderinstruction
       return;
     }
 
-    MapSize textSize = getEstimatedTextBoundary(caption, strokeWidth);
-    lineSegmentPath = lineSegmentPath.reducePathForText(textSize.width, repeatStart, repeatGap);
-    if (lineSegmentPath.segments.isEmpty) return;
+    MapSize textSize = getEstimatedPathTextBoundary(caption, strokeWidth);
+    // the text is drawn straight: keep it within half a font size of the way
+    List<LineSegment> chords = lineSegmentPath.textPositions(textSize.width, repeatStart, repeatGap, fontSize / 2);
+    if (chords.isEmpty) return;
 
     PixelProjection projection = PixelProjection(zoomlevel);
-    for (var segment in lineSegmentPath.segments) {
-      // So text isn't upside down
-      bool doInvert = segment.end.x < segment.start.x;
-      Mappoint start;
-      double diff = (segment.length() - textSize.width) / 2;
-      if (doInvert) {
-        //start = segment.end.offset(-origin.x, -origin.y);
-        start = segment.pointAlongLineSegment(diff + textSize.width);
-      } else {
-        //start = segment.start.offset(-origin.x, -origin.y);
-        start = segment.pointAlongLineSegment(diff);
-      }
+    for (var chord in chords) {
+      // the text is painted centred on this point
+      Mappoint centre = chord.pointAlongLineSegment(chord.length() / 2);
 
       layerContainer.addClash(
         RenderInfoNode(
           NodeProperties(
-            PointOfInterest(wayProperties.layer, wayProperties.getTags(), LatLong(projection.pixelYToLatitude(start.y), projection.pixelXToLongitude(start.x))),
+            PointOfInterest(
+              wayProperties.layer,
+              wayProperties.getTags(),
+              LatLong(projection.pixelYToLatitude(centre.y), projection.pixelXToLongitude(centre.x)),
+            ),
             projection,
           ),
           this,
-          rotateRadians: segment.getTheta(),
+          rotateRadians: chord.getTheta(),
           caption: caption,
         ),
       );
