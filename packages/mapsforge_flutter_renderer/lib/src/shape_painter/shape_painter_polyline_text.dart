@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:mapsforge_flutter_core/model.dart';
 import 'package:mapsforge_flutter_core/task_queue.dart';
 import 'package:mapsforge_flutter_renderer/shape_painter.dart';
@@ -64,6 +65,11 @@ class ShapePainterPolylineText extends UiShapePainter<RenderinstructionPolylineT
     });
   }
 
+  /// The laid-out [caption] in [paint]. A text along a way is always one line – its collision box is one line high –
+  /// so it is not wrapped at the instruction's max text width.
+  @visibleForTesting
+  ParagraphEntry paragraphFor(String caption, UiPaint paint) => ParagraphCacheMgr().getEntry(caption, textPaint, paint, double.infinity);
+
   @override
   /// Renders text for a node.
   @override
@@ -73,11 +79,11 @@ class ShapePainterPolylineText extends UiShapePainter<RenderinstructionPolylineT
 
     MappointRelative relative = nodeProperties.getCoordinatesAbsolute().offset(renderContext.reference).offset(0, renderinstruction.dy);
     if (paintBack != null) {
-      ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintBack!, renderinstruction.getMaxTextWidth());
+      ParagraphEntry entry = paragraphFor(renderInfo.caption!, paintBack!);
       renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderInfo.rotateRadians, relative);
     }
     if (paintFront != null) {
-      ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintFront!, renderinstruction.getMaxTextWidth());
+      ParagraphEntry entry = paragraphFor(renderInfo.caption!, paintFront!);
       renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderInfo.rotateRadians, relative);
     }
   }
@@ -104,11 +110,11 @@ class ShapePainterPolylineText extends UiShapePainter<RenderinstructionPolylineT
     for (var chord in chords) {
       MappointRelative centre = chord.pointAlongLineSegment(chord.length() / 2).offset(renderContext.reference);
       if (paintBack != null) {
-        ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintBack!, renderinstruction.getMaxTextWidth());
+        ParagraphEntry entry = paragraphFor(renderInfo.caption!, paintBack!);
         renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderContext.rotationRadian + chord.getTheta(), centre);
       }
       if (paintFront != null) {
-        ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintFront!, renderinstruction.getMaxTextWidth());
+        ParagraphEntry entry = paragraphFor(renderInfo.caption!, paintFront!);
         renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderContext.rotationRadian + chord.getTheta(), centre);
       }
     }

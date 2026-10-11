@@ -80,6 +80,15 @@ void main() {
       }
     });
 
+    test('a slight bend across the vertical is accepted, a reversal is not', () {
+      Mappoint towards(Mappoint from, double degrees) => Mappoint(from.x + 100 * cos(degrees * pi / 180), from.y + 100 * sin(degrees * pi / 180));
+      const start = Mappoint(1000, 1000);
+      final bend = towards(start, 89);
+      expect(pathOf([start, bend, towards(bend, 91)]).textPositions(100, 50, 1000, 100), hasLength(1));
+      final turn = towards(start, 0);
+      expect(pathOf([start, turn, towards(turn, 180)]).textPositions(100, 50, 1000, 100), isEmpty);
+    });
+
     test('a window starting or ending on a vertex of a straight way is not a corner', () {
       final starting = pathOf([const Mappoint(0, 0), const Mappoint(0, 35), const Mappoint(0, 200)]);
       expect(starting.textPositions(103, 35, 1000, 1), hasLength(1));
