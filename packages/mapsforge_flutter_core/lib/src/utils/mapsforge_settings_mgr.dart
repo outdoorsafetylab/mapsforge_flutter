@@ -73,12 +73,15 @@ class MapsforgeSettingsMgr {
   /// left alone.
   double elevationPathTextScale = 1;
 
-  /// The elevations of contour lines (texts along ways showing the key "ele") follow the render theme's rules for
+  /// The category (`cat` of a rule, see [contourCategory]) whose instructions follow the render theme's rules for
   /// this many zoomlevels below the one rendered; everything else follows the rules for the zoomlevel rendered.
   ///
-  /// A theme made for bigger tiles, shown with smaller tiles at the same pixel density, labels the ground of zoomlevel
-  /// N - 1 as densely as intended; an offset of 1 keeps that density.
-  int elevationPathTextZoomOffset = 0;
+  /// A theme made for bigger tiles, shown with smaller tiles at the same pixel density, draws the ground of zoomlevel
+  /// N - 1 with the lines and labels meant for N; an offset of 1 keeps the look the theme was made for.
+  int contourZoomOffset = 0;
+
+  /// The `cat` of the rules [contourZoomOffset] applies to, the rule's own or inherited from a rule above it.
+  String contourCategory = "contour";
 
   /// Default maximum zoom level supported by the rendering system.
   /// Can be overridden by specific map implementations.
