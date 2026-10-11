@@ -4,16 +4,17 @@ import 'package:mapsforge_flutter_rendertheme/renderinstruction.dart';
 import 'package:mapsforge_flutter_rendertheme/rendertheme.dart';
 import 'package:test/test.dart';
 
-/// The elevations of contour lines (texts along ways showing "ele") can be drawn smaller than the other texts and
-/// follow the rules of a lower zoomlevel, see [MapsforgeSettingsMgr.elevationPathTextScale] and
-/// [MapsforgeSettingsMgr.elevationPathTextZoomOffset].
+/// The elevations of contour lines (texts along ways showing "ele") can be drawn smaller than the other texts, and
+/// the contour rules (by their category) can follow a lower zoomlevel, see [MapsforgeSettingsMgr.elevationPathTextScale]
+/// and [MapsforgeSettingsMgr.contourZoomOffset].
 void main() {
   final settings = MapsforgeSettingsMgr();
 
   tearDown(() {
     settings.setFontScaleFactor(1);
     settings.elevationPathTextScale = 1;
-    settings.elevationPathTextZoomOffset = 0;
+    settings.contourZoomOffset = 0;
+    settings.contourCategory = 'contour';
   });
 
   Way wayWith(List<Tag> tags) => Way(0, tags, [
@@ -56,69 +57,68 @@ void main() {
     });
   });
 
-  group('elevationPathTextZoomOffset', () {
-    // the elevations get denser from zoomlevel to zoomlevel, the lines are drawn differently at each
+  group('contourZoomOffset', () {
+    // the contour lines and their elevations get denser from zoomlevel to zoomlevel; a path is drawn and named
+    // alongside, inside the same zoomlevel ranges
     const theme = '''
 <rendertheme xmlns="http://mapsforge.org/renderTheme" version="6">
-  <rule e="way" k="contour" v="*">
-    <rule e="way" k="*" v="*" zoom-min="14" zoom-max="14">
+  <rule cat="contour" e="way" k="*" v="*">
+    <rule e="way" k="contour" v="*" zoom-min="14" zoom-max="14">
       <line stroke="#000014" stroke-width="1"/>
       <pathText k="ele" font-size="14"/>
     </rule>
-    <rule e="way" k="*" v="*" zoom-min="15" zoom-max="15">
+    <rule e="way" k="contour" v="*" zoom-min="15" zoom-max="15">
       <line stroke="#000015" stroke-width="1"/>
       <pathText k="ele" font-size="15"/>
       <pathText k="name" font-size="15"/>
     </rule>
   </rule>
-  <rule e="way" k="highway" v="path" zoom-min="15">
+  <rule e="way" k="highway" v="path" zoom-min="15" zoom-max="15">
+    <line stroke="#000115" stroke-width="1"/>
     <pathText k="name" font-size="10"/>
   </rule>
 </rendertheme>''';
 
     List<int> lineColors(List<Renderinstruction> instructions) =>
         instructions.whereType<RenderinstructionPolyline>().map((ri) => ri.strokeColor & 0xffffff).toList();
-    List<double> elevationSizes(List<Renderinstruction> instructions) =>
-        instructions.whereType<RenderinstructionPolylineText>().where((ri) => ri.isElevationText).map((ri) => ri.fontSize).toList();
-    List<double> nameSizes(List<Renderinstruction> instructions) =>
-        instructions.whereType<RenderinstructionPolylineText>().where((ri) => !ri.isElevationText).map((ri) => ri.fontSize).toList();
+    List<double> textSizes(List<Renderinstruction> instructions) =>
+        instructions.whereType<RenderinstructionPolylineText>().map((ri) => ri.fontSize).toList();
 
-    test('with 1 the elevations come from the rules one zoomlevel below, all else from the rules of the zoomlevel', () {
-      settings.elevationPathTextZoomOffset = 1;
+    test('with 1 the contour rules are taken one zoomlevel below, all other rules at the zoomlevel', () {
+      settings.contourZoomOffset = 1;
       final rendertheme = RenderThemeBuilder.createFromString(theme);
 
       final at15 = instructionsFor(rendertheme, 15, contour);
-      expect(lineColors(at15), [0x15]);
-      expect(elevationSizes(at15), [14]);
-      expect(nameSizes(at15), [15]);
+      expect(lineColors(at15), [0x14]);
+      expect(textSizes(at15), [14]);
       // prepared for the zoomlevel rendered
-      expect(at15.whereType<RenderinstructionPolylineText>().every((ri) => ri.zoomlevel == 15), isTrue);
+      expect(at15.whereType<RenderinstructionPolylineText>().single.zoomlevel, 15);
 
-      // a rule holding only the zoomlevel below brings its elevations, nothing else
       final at16 = instructionsFor(rendertheme, 16, contour);
-      expect(lineColors(at16), isEmpty);
-      expect(elevationSizes(at16), [15]);
-      expect(nameSizes(at16), isEmpty);
+      expect(lineColors(at16), [0x15]);
+      expect(textSizes(at16), [15, 15]);
 
-      final at14 = instructionsFor(rendertheme, 14, contour);
-      expect(lineColors(at14), [0x14]);
-      expect(elevationSizes(at14), isEmpty);
+      expect(instructionsFor(rendertheme, 14, contour), isEmpty);
 
-      // other texts along ways keep their zoomlevel
-      expect(nameSizes(instructionsFor(rendertheme, 15, path)), [10]);
-      expect(instructionsFor(rendertheme, 14, path), isEmpty);
+      // the path keeps its zoomlevel
+      expect(lineColors(instructionsFor(rendertheme, 15, path)), [0x115]);
+      expect(textSizes(instructionsFor(rendertheme, 15, path)), [10]);
+      expect(instructionsFor(rendertheme, 16, path), isEmpty);
     });
 
-    test('with 0 every instruction follows the rules of its zoomlevel', () {
+    test('the category is the one set, nothing follows an unknown one', () {
+      settings.contourZoomOffset = 1;
+      settings.contourCategory = 'elevation';
       final rendertheme = RenderThemeBuilder.createFromString(theme);
+      expect(lineColors(instructionsFor(rendertheme, 15, contour)), [0x15]);
+      expect(instructionsFor(rendertheme, 16, contour), isEmpty);
+    });
 
-      final at15 = instructionsFor(rendertheme, 15, contour);
-      expect(lineColors(at15), [0x15]);
-      expect(elevationSizes(at15), [15]);
-      expect(nameSizes(at15), [15]);
-      final at14 = instructionsFor(rendertheme, 14, contour);
-      expect(lineColors(at14), [0x14]);
-      expect(elevationSizes(at14), [14]);
+    test('with 0 every rule is taken at its zoomlevel', () {
+      final rendertheme = RenderThemeBuilder.createFromString(theme);
+      expect(lineColors(instructionsFor(rendertheme, 15, contour)), [0x15]);
+      expect(textSizes(instructionsFor(rendertheme, 15, contour)), [15, 15]);
+      expect(lineColors(instructionsFor(rendertheme, 14, contour)), [0x14]);
       expect(instructionsFor(rendertheme, 16, contour), isEmpty);
     });
   });

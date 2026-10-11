@@ -106,7 +106,7 @@ class RenderThemeBuilder {
     renderThemeBuilder._parseXml(content);
     renderThemeBuilder.forHash =
         "${MapsforgeSettingsMgr().getDeviceScaleFactor()}_${MapsforgeSettingsMgr().getUserScaleFactor()}_${MapsforgeSettingsMgr().getFontScaleFactor()}_${MapsforgeSettingsMgr().tileSize}"
-        "_${MapsforgeSettingsMgr().elevationPathTextScale}_${MapsforgeSettingsMgr().elevationPathTextZoomOffset}";
+        "_${MapsforgeSettingsMgr().elevationPathTextScale}_${MapsforgeSettingsMgr().contourZoomOffset}_${MapsforgeSettingsMgr().contourCategory}";
     return renderThemeBuilder._build();
   }
 

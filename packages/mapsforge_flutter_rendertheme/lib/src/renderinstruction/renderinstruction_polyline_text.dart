@@ -26,8 +26,7 @@ class RenderinstructionPolylineText extends Renderinstruction
 
   TextKey? textKey;
 
-  /// Whether this shows the elevations of contour lines, see [MapsforgeSettingsMgr.elevationPathTextScale] and
-  /// [MapsforgeSettingsMgr.elevationPathTextZoomOffset].
+  /// Whether this shows the elevations of contour lines, see [MapsforgeSettingsMgr.elevationPathTextScale].
   bool get isElevationText => textKey?.key == 'ele';
 
   int zoomlevel = -1;
