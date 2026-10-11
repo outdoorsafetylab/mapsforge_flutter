@@ -74,11 +74,11 @@ class ShapePainterPolylineText extends UiShapePainter<RenderinstructionPolylineT
     MappointRelative relative = nodeProperties.getCoordinatesAbsolute().offset(renderContext.reference).offset(0, renderinstruction.dy);
     if (paintBack != null) {
       ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintBack!, renderinstruction.getMaxTextWidth());
-      renderContext.canvas.drawTextRotated(entry.paragraph, renderInfo.rotateRadians, relative);
+      renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderInfo.rotateRadians, relative);
     }
     if (paintFront != null) {
       ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintFront!, renderinstruction.getMaxTextWidth());
-      renderContext.canvas.drawTextRotated(entry.paragraph, renderInfo.rotateRadians, relative);
+      renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderInfo.rotateRadians, relative);
     }
   }
 
@@ -93,28 +93,23 @@ class ShapePainterPolylineText extends UiShapePainter<RenderinstructionPolylineT
       return;
     }
 
-    MapSize textSize = renderinstruction.getEstimatedTextBoundary(renderInfo.caption!, renderinstruction.strokeWidth);
-    lineSegmentPath = lineSegmentPath.reducePathForText(textSize.width, renderinstruction.repeatStart, renderinstruction.repeatGap);
-    if (lineSegmentPath.segments.isEmpty) return;
+    MapSize textSize = renderinstruction.getEstimatedPathTextBoundary(renderInfo.caption!, renderinstruction.strokeWidth);
+    List<LineSegment> chords = lineSegmentPath.textPositions(
+      textSize.width,
+      renderinstruction.repeatStart,
+      renderinstruction.repeatGap,
+      renderinstruction.fontSize / 2,
+    );
 
-    for (var segment in lineSegmentPath.segments) {
-      // So text isn't upside down
-      bool doInvert = segment.end.x <= segment.start.x;
-      Mappoint start;
-      double diff = (segment.length() - textSize.width) / 2;
-      if (doInvert) {
-        start = segment.pointAlongLineSegment(diff + textSize.width);
-      } else {
-        start = segment.pointAlongLineSegment(diff);
-      }
-
+    for (var chord in chords) {
+      MappointRelative centre = chord.pointAlongLineSegment(chord.length() / 2).offset(renderContext.reference);
       if (paintBack != null) {
         ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintBack!, renderinstruction.getMaxTextWidth());
-        renderContext.canvas.drawTextRotated(entry.paragraph, renderContext.rotationRadian + segment.getTheta(), start.offset(renderContext.reference));
+        renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderContext.rotationRadian + chord.getTheta(), centre);
       }
       if (paintFront != null) {
         ParagraphEntry entry = ParagraphCacheMgr().getEntry(renderInfo.caption!, textPaint, paintFront!, renderinstruction.getMaxTextWidth());
-        renderContext.canvas.drawTextRotated(entry.paragraph, renderContext.rotationRadian + segment.getTheta(), start.offset(renderContext.reference));
+        renderContext.canvas.drawTextRotatedCentered(entry.paragraph, renderContext.rotationRadian + chord.getTheta(), centre);
       }
     }
   }

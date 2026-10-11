@@ -5,7 +5,11 @@ import 'package:mapsforge_flutter_rendertheme/src/model/line_segment.dart';
 
 /// A list of Linesegments which consists of segments in screen-pixels.
 class LineSegmentPath {
-  static final double MAX_LABEL_CORNER_ANGLE = 10;
+  /// The sharpest corner (in degrees) a text may span, as in Java mapsforge.
+  static const double maxTextCornerAngle = 45;
+
+  /// Segments shorter than this (in pixels) are ignored when placing texts.
+  static const double minTextSegmentLength = 0.5;
 
   final List<LineSegment> segments = [];
 
@@ -97,46 +101,53 @@ class LineSegmentPath {
     return result;
   }
 
-  LineSegmentPath reducePathForText(double textWidth, double repeatStart, double repeatGap) {
-    LineSegmentPath result = LineSegmentPath();
-    LineSegmentPath path = LineSegmentPath();
-    LineSegmentPath longestPath = LineSegmentPath();
-    double preLength = repeatStart;
-    for (LineSegment segment in segments) {
-      if (path.length() > preLength + textWidth && path.segments.first.start != path.segments.last.end) {
-        // the length of all previous tiny paths is in sum long enough to fit the text
-        result.segments.add(LineSegment(path.segments.first.start, path.segments.last.end));
-        path = LineSegmentPath();
-      }
-      while (segment.length() >= preLength + textWidth) {
-        // we found a segment which is long enough
-        result.segments.add(segment.subSegment(preLength, textWidth));
-        segment = segment.subSegment(preLength + textWidth);
-        preLength = repeatGap;
-        // ignore the tiny paths from previous iterations
-        path.segments.clear();
-      }
-      if (segment.length() > 10) {
-        if (path.segments.isEmpty || path.segments.last.angleTo(segment).abs() < MAX_LABEL_CORNER_ANGLE) {
-          // the angle to the last segment is small enough to be part of the same path
-          path.segments.add(segment);
-        } else {
-          path.segments.clear();
-          if (longestPath.length() < path.length()) longestPath = path;
-        }
-      }
+  /// Where texts of [textWidth] go along this path. As in Java mapsforge's `WayDecorator.renderText`, a window of
+  /// [textWidth] is tried at [repeatStart] and then every [repeatGap] + [textWidth] while it fits, and is used when
+  /// none of its corners exceeds [maxTextCornerAngle]. The text is drawn straight, so a window is also dropped when
+  /// one of its points lies further than [maxDeviation] from the window's chord.
+  ///
+  /// Returns the chord of every window used; the text belongs centred on it.
+  List<LineSegment> textPositions(double textWidth, double repeatStart, double repeatGap, double maxDeviation) {
+    final List<LineSegment> result = [];
+    if (textWidth <= 0) return result;
+    final double pathLength = length();
+    for (double pos = repeatStart; pos + textWidth <= pathLength; pos += repeatGap + textWidth) {
+      // extractPart() yields a zero-length segment when the window starts or ends on a vertex; it has no direction
+      // and would read as a corner
+      final List<LineSegment> part = extractPart(pos, pos + textWidth).segments.where((segment) => segment.length() >= minTextSegmentLength).toList();
+      if (part.isEmpty) continue;
+      if (!_cornersWithin(part, maxTextCornerAngle)) continue;
+      final LineSegment chord = LineSegment(part.first.start, part.last.end);
+      if (chord.length() < minTextSegmentLength) continue;
+      if (_deviationFrom(chord, part) > maxDeviation) continue;
+      result.add(chord);
     }
-    if (result.segments.isEmpty && longestPath.segments.isNotEmpty && longestPath.length() > textWidth * 2 / 3) {
-      // we do not have a sufficient length for the text but the remaining path is 2/3 of what we need so use it
-      if (longestPath.segments.first.start != longestPath.segments.last.end) {
-        result.segments.add(LineSegment(longestPath.segments.first.start, longestPath.segments.last.end));
-      }
+    return result;
+  }
+
+  static bool _cornersWithin(List<LineSegment> part, double maxAngle) {
+    for (int i = 1; i < part.length; i++) {
+      if (part[i - 1].angleTo(part[i]).abs() > maxAngle) return false;
+    }
+    return true;
+  }
+
+  /// The largest distance of a point of [part] from the line through [chord].
+  static double _deviationFrom(LineSegment chord, List<LineSegment> part) {
+    final double dx = chord.end.x - chord.start.x;
+    final double dy = chord.end.y - chord.start.y;
+    final double length = chord.length();
+    double result = 0;
+    for (LineSegment segment in part) {
+      final Mappoint point = segment.end;
+      result = max(result, ((point.x - chord.start.x) * dy - (point.y - chord.start.y) * dx).abs() / length);
     }
     return result;
   }
 
   @override
-  bool operator ==(Object other) => identical(this, other) || other is LineSegmentPath && runtimeType == other.runtimeType && segments == other.segments;
+  bool operator ==(Object other) =>
+      identical(this, other) || other is LineSegmentPath && runtimeType == other.runtimeType && segments == other.segments;
 
   @override
   int get hashCode => segments.hashCode;

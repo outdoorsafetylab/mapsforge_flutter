@@ -240,6 +240,17 @@ class UiCanvas {
     ++_textCount;
   }
 
+  /// Like [drawTextRotated], but [reference] is the centre of the text instead of the start of its line.
+  void drawTextRotatedCentered(ui.Paragraph paragraph, double theta, MappointRelative reference) {
+    _uiCanvas.save();
+    _uiCanvas.translate(reference.dx, reference.dy);
+    _uiCanvas.rotate(theta);
+    _uiCanvas.translate(-paragraph.longestLine / 2, -paragraph.height / 2);
+    _uiCanvas.drawParagraph(paragraph, ui.Offset.zero);
+    _uiCanvas.restore();
+    ++_textCount;
+  }
+
   /// draws the given [text] so that the center of the text in at the given x/y coordinates
   void drawText(String text, double x, double y, UiPaint paint, UiTextPaint textPaint, double maxTextWidth) {
     ParagraphEntry entry = ParagraphCacheMgr().getEntry(text, textPaint, paint, maxTextWidth);

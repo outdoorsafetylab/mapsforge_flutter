@@ -9,7 +9,14 @@ class FontWidthHelper {
   /// maxTextWidth if text is not available or measurement fails.
   ///
   /// [text] The text content to measure
-  MapSize getBoundaryForText(String text, MapFontFamily fontFamily, MapFontStyle fontStyle, double fontSize, double strokeWidth, double maxTextLength) {
+  MapSize getBoundaryForText(
+    String text,
+    MapFontFamily fontFamily,
+    MapFontStyle fontStyle,
+    double fontSize,
+    double strokeWidth,
+    double maxTextLength,
+  ) {
     if (text.isEmpty) return const MapSize.empty();
 
     // Average character width as fraction of font size
@@ -29,6 +36,26 @@ class FontWidthHelper {
       width = maxTextLength + strokePadding;
     }
     return MapSize(width: width, height: (fontSize + strokePadding) * lines);
+  }
+
+  /// Estimated size of a text drawn along a way (one line). Unlike [getBoundaryForText] it weighs the characters by
+  /// kind: digits are narrow (measured 0.56 em in Roboto, 0.62 em in SF), CJK characters take a full em, everything
+  /// else keeps the 0.9 em of [getBoundaryForText].
+  MapSize getBoundaryForPathText(String text, MapFontStyle fontStyle, double fontSize, double strokeWidth) {
+    if (text.isEmpty) return const MapSize.empty();
+    double ems = 0;
+    for (int rune in text.runes) {
+      if (rune >= 0x30 && rune <= 0x39) {
+        ems += 0.63;
+      } else if (rune >= 0x2E80) {
+        ems += 1.0;
+      } else {
+        ems += 0.9;
+      }
+    }
+    double weightMultiplier = fontStyle == MapFontStyle.BOLD || fontStyle == MapFontStyle.BOLD_ITALIC ? 1.1 : 1.0;
+    double strokePadding = strokeWidth * 2;
+    return MapSize(width: ems * fontSize * weightMultiplier + strokePadding, height: fontSize + strokePadding);
   }
 
   /// Gets the font family name for TextStyle creation.

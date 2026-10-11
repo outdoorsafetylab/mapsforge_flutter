@@ -55,20 +55,21 @@ class LineSegment {
     if (end == start) return 0;
     _theta = end.x != start.x
         ? atan((end.y - start.y) / (end.x - start.x))
-        : end.y > end.x
+        : end.y > start.y
         ? pi / 2
         : -pi / 2;
     return _theta!;
   }
 
-  /// Computes the angle between this LineSegment and another one.
+  /// Computes the angle between this LineSegment and another one, taking their directions into account (as Java
+  /// mapsforge does): 0 for the same direction, ±180 for opposite ones.
   ///
   /// @param other the other LineSegment
-  /// @return angle in degrees
+  /// @return angle in degrees, in (-180, 180]: the direction of this segment minus the direction of [other]
   double angleTo(LineSegment other) {
-    double angle1 = getTheta();
-    double angle2 = other.getTheta();
-    double angle = toDegrees(angle1 - angle2);
+    double angle = getAngle() - other.getAngle();
+    if (angle <= -180) angle += 360;
+    if (angle > 180) angle -= 360;
     return angle;
   }
 
