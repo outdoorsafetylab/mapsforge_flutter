@@ -70,6 +70,11 @@ mixin TextSrcMixin {
     return FontWidthHelper().getBoundaryForText(caption, fontFamily, fontStyle, fontSize, strokeWidth, _maxTextWidth);
   }
 
+  /// [getEstimatedTextBoundary] for a text drawn along a way.
+  MapSize getEstimatedPathTextBoundary(String caption, double strokeWidth) {
+    return FontWidthHelper().getBoundaryForPathText(caption, fontStyle, fontSize, strokeWidth);
+  }
+
   MapFontStyle get fontStyle => _fontStyle;
 
   MapFontFamily get fontFamily => _fontFamily;
