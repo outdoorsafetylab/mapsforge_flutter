@@ -18,14 +18,15 @@ class NegativeRule extends Rule {
   });
 
   @override
-  NegativeRule? forZoomlevel(int zoomlevel, Set<String>? categories, int Function() getMaxLevel) {
+  NegativeRule? forZoomlevel(int zoomlevel, Set<String>? categories, int Function() getMaxLevel, {bool inContour = false}) {
     if (categories != null && cat != null && !categories.contains(cat)) return null;
-    var instructions = instructionsForZoomlevel(zoomlevel, getMaxLevel);
+    bool contour = isContour(inContour);
+    var instructions = instructionsForZoomlevel(zoomlevel, getMaxLevel, contour);
     if (instructions == null) return null;
     var (nodes: renderinstructionNodes, openWays: renderinstructionOpenWays, closedWays: renderinstructionClosedWays) = instructions;
     List<Rule> subRules = [];
     for (var subRule in super.subRules) {
-      Rule? rule = subRule.forZoomlevel(zoomlevel, categories, getMaxLevel);
+      Rule? rule = subRule.forZoomlevel(zoomlevel, categories, getMaxLevel, inContour: contour);
       if (rule != null) subRules.add(rule);
     }
 

@@ -50,35 +50,35 @@ abstract class Rule implements SymbolSearcher {
     }
   }
 
-  Rule? forZoomlevel(int zoomlevel, Set<String>? categories, int Function() Function);
+  /// This rule prepared for [zoomlevel], or null if it takes no part in it. [inContour] tells that a rule above this
+  /// one has the [MapsforgeSettingsMgr.contourCategory].
+  Rule? forZoomlevel(int zoomlevel, Set<String>? categories, int Function() getMaxLevel, {bool inContour = false});
+
+  /// Whether this rule, or one above it, has the [MapsforgeSettingsMgr.contourCategory].
+  bool isContour(bool inContour) => inContour || cat == MapsforgeSettingsMgr().contourCategory;
 
   /// The render instructions of this rule (not of its subrules) prepared for [zoomlevel], or null if this rule does
   /// not take part in [zoomlevel].
   ///
-  /// The elevations of contour lines take part if the rule's zoomlevel range holds zoomlevel minus
-  /// [MapsforgeSettingsMgr.elevationPathTextZoomOffset], all other instructions if it holds [zoomlevel]. Either way
-  /// they are prepared for [zoomlevel], the one rendered.
+  /// A contour rule ([isContour]) takes part if its zoomlevel range holds zoomlevel minus
+  /// [MapsforgeSettingsMgr.contourZoomOffset], any other rule if it holds [zoomlevel]. Either way the instructions
+  /// are prepared for [zoomlevel], the one rendered.
   ({List<RenderinstructionNode> nodes, List<RenderinstructionWay> openWays, List<RenderinstructionWay> closedWays})? instructionsForZoomlevel(
     int zoomlevel,
     int Function() getMaxLevel,
+    bool contour,
   ) {
-    bool forOthers = matchesForZoomLevel(zoomlevel);
-    bool forElevations = matchesForZoomLevel(zoomlevel - MapsforgeSettingsMgr().elevationPathTextZoomOffset);
-    if (!forOthers && !forElevations) return null;
-
-    bool takesPart(Object renderinstruction) =>
-        renderinstruction is RenderinstructionPolylineText && renderinstruction.isElevationText ? forElevations : forOthers;
-    List<RenderinstructionNode> nodes = renderinstructionNodes.where(takesPart).toList();
-    List<RenderinstructionWay> openWays = renderinstructionOpenWays.where(takesPart).toList();
-    List<RenderinstructionWay> closedWays = renderinstructionClosedWays.where(takesPart).toList();
-    if (nodes.isEmpty && openWays.isEmpty && closedWays.isEmpty) return (nodes: nodes, openWays: openWays, closedWays: closedWays);
+    if (!matchesForZoomLevel(contour ? zoomlevel - MapsforgeSettingsMgr().contourZoomOffset : zoomlevel)) return null;
+    if (renderinstructionNodes.isEmpty && renderinstructionOpenWays.isEmpty && renderinstructionClosedWays.isEmpty) {
+      return (nodes: const [], openWays: const [], closedWays: const []);
+    }
 
     // only retrieve a new level if we need it
     int maxLevel = getMaxLevel();
     return (
-      nodes: [for (var renderInstruction in nodes) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
-      openWays: [for (var renderInstruction in openWays) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
-      closedWays: [for (var renderInstruction in closedWays) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
+      nodes: [for (var renderInstruction in renderinstructionNodes) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
+      openWays: [for (var renderInstruction in renderinstructionOpenWays) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
+      closedWays: [for (var renderInstruction in renderinstructionClosedWays) renderInstruction.forZoomlevel(zoomlevel, maxLevel)],
     );
   }
 
