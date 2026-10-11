@@ -54,6 +54,11 @@ mixin TextSrcMixin {
     _fontSize = fontSize * MapsforgeSettingsMgr().getFontScaleFactor();
   }
 
+  /// Multiplies the font size as set so far by [factor].
+  void scaleFontSize(double factor) {
+    _fontSize *= factor;
+  }
+
   void setMaxFontSize(double maxFontSize) {
     _maxFontSize = maxFontSize;
   }

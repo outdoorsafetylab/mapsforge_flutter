@@ -26,6 +26,10 @@ class RenderinstructionPolylineText extends Renderinstruction
 
   TextKey? textKey;
 
+  /// Whether this shows the elevations of contour lines, see [MapsforgeSettingsMgr.elevationPathTextScale] and
+  /// [MapsforgeSettingsMgr.elevationPathTextZoomOffset].
+  bool get isElevationText => textKey?.key == 'ele';
+
   int zoomlevel = -1;
 
   RenderinstructionPolylineText(int level) {
@@ -104,6 +108,7 @@ class RenderinstructionPolylineText extends Renderinstruction
     }
 
     XmlUtils.checkMandatoryAttribute(rootElement.name.toString(), Renderinstruction.K, textKey);
+    if (isElevationText) scaleFontSize(MapsforgeSettingsMgr().elevationPathTextScale);
   }
 
   /// The box around the text as it is painted: centred on the anchor and rotated with it.
