@@ -9,6 +9,7 @@ import 'package:mapsforge_flutter_core/utils.dart';
 import 'package:mapsforge_flutter_renderer/offline_renderer.dart';
 import 'package:mapsforge_flutter_renderer/shape_painter.dart';
 import 'package:mapsforge_flutter_renderer/src/datastore_reader.dart';
+import 'package:mapsforge_flutter_renderer/src/job/reader_lane.dart';
 import 'package:mapsforge_flutter_renderer/src/ui/tile_picture.dart';
 import 'package:mapsforge_flutter_renderer/src/ui/ui_canvas.dart';
 import 'package:mapsforge_flutter_renderer/src/ui/ui_render_context.dart';
@@ -59,7 +60,8 @@ class IsolateDatastoreRenderer implements Renderer {
 
   @override
   Future<JobResult> executeJob(JobRequest jobRequest) async {
-    JobResult result = await _isolateInstance.compute(_RendererExecuteRequest(jobRequest));
+    // the scheduling of the request stays here, its isCancelled may capture objects which cannot be sent to an isolate
+    JobResult result = await _isolateInstance.compute(_RendererExecuteRequest(JobRequest(jobRequest.tile, jobRequest.rightLower)));
     return result;
   }
 
@@ -70,7 +72,7 @@ class IsolateDatastoreRenderer implements Renderer {
 
   @override
   Future<JobResult> retrieveLabels(JobRequest jobRequest) async {
-    JobResult result = await _isolateInstance.compute(_RendererRetrieveLabelsRequest(jobRequest));
+    JobResult result = await _isolateInstance.compute(_RendererRetrieveLabelsRequest(JobRequest(jobRequest.tile, jobRequest.rightLower)));
     return result;
   }
 
@@ -150,6 +152,13 @@ class DatastoreRenderer extends Renderer {
 
   bool _disposed = false;
 
+  /// The reads of tiles waiting for the reader, see [ReaderLane]. Tiles and label blocks have their own slots so that
+  /// the long reads of label blocks do not hold up the tiles, and the tiles do not keep the labels waiting.
+  final ReaderLane _tileLane;
+
+  /// The reads of label blocks waiting for the reader, see [_tileLane].
+  final ReaderLane _labelLane;
+
   /// Object pool for RenderInfo sets to reduce garbage collection.
   static final ObjectPool<Set<RenderInfo>> _renderInfoSetPool = ObjectPool<Set<RenderInfo>>(
     factory: () => <RenderInfo>{},
@@ -165,7 +174,17 @@ class DatastoreRenderer extends Renderer {
   /// [useIsolateReader] Whether to read the datastore and match it against the theme in an isolate (drawing stays in
   /// this isolate). The [datastore] is copied into that isolate, so do not read from it before. If you use
   /// [IsolateMapfile] do NOT use an isolateReader
-  DatastoreRenderer(this.datastore, this.rendertheme, {this.useSeparateLabelLayer = true, bool useIsolateReader = false}) {
+  /// [tileSlots] and [labelSlots] The number of tile and label reads at most in the reader at the same time, see
+  /// [ReaderLane]
+  DatastoreRenderer(
+    this.datastore,
+    this.rendertheme, {
+    this.useSeparateLabelLayer = true,
+    bool useIsolateReader = false,
+    int tileSlots = 2,
+    int labelSlots = 1,
+  }) : _tileLane = ReaderLane(tileSlots),
+       _labelLane = ReaderLane(labelSlots) {
     if (useSeparateLabelLayer) {
       tileDependencies = null;
     } else {
@@ -183,6 +202,9 @@ class DatastoreRenderer extends Renderer {
     rendertheme.dispose();
     datastore.dispose();
     _disposed = true;
+    // the reads still waiting complete with a JobCancelledException
+    _tileLane.dispose();
+    _labelLane.dispose();
     Future<IsolateDatastoreReader>? isolateReader = _isolateReader;
     _isolateReader = null;
     if (isolateReader != null) unawaited(isolateReader.then((reader) => reader.dispose(), onError: (_) {}));
@@ -212,7 +234,8 @@ class DatastoreRenderer extends Renderer {
     RenderthemeZoomlevel renderthemeLevel = rendertheme.prepareZoomlevel(job.tile.zoomLevel);
     session.checkpoint("after prepareZoomlevel");
 
-    LayerContainerCollection? layerContainerCollection = await (await _reader()).read(job.tile, renderthemeLevel);
+    DatastoreReader reader = await _reader();
+    LayerContainerCollection? layerContainerCollection = await _tileLane.run(job, () => reader.read(job.tile, renderthemeLevel));
 
     //timing.lap(100, "RenderContext ${renderContext} created");
     if (layerContainerCollection == null) {
@@ -260,7 +283,11 @@ class DatastoreRenderer extends Renderer {
     // we need something like 600ms to start an isolate whereas the whole read-process just needs about 200ms
     RenderthemeZoomlevel renderthemeLevel = rendertheme.prepareZoomlevel(job.tile.zoomLevel);
 
-    LayerContainerCollection? layerContainerCollection = await (await _reader()).readLabels(job.tile, job.rightLower ?? job.tile, renderthemeLevel);
+    DatastoreReader reader = await _reader();
+    LayerContainerCollection? layerContainerCollection = await _labelLane.run(
+      job,
+      () => reader.readLabels(job.tile, job.rightLower ?? job.tile, renderthemeLevel),
+    );
 
     if (layerContainerCollection == null) {
       return JobResult.unsupported();

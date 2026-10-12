@@ -173,8 +173,9 @@ class LabelJobQueue extends ChangeNotifier {
     if (labelSet.jobLabels.addAll(cached)) {
       _emitLabelSetBatched(labelSet);
     }
-    for (Tile tile in missingTiles) {
-      unawaited(_taskQueue.add(() => _produceLabel(myJob, tile.tileX, tile.tileY, position, maxTileNbr)));
+    for (int order = 0; order < missingTiles.length; ++order) {
+      Tile tile = missingTiles[order];
+      unawaited(_taskQueue.add(() => _produceLabel(myJob, tile.tileX, tile.tileY, position, maxTileNbr, order)));
     }
     unawaited(
       _taskQueue.add(() async {
@@ -184,17 +185,29 @@ class LabelJobQueue extends ChangeNotifier {
     session.complete();
   }
 
-  Future<void> _produceLabel(_CurrentJob myJob, int left, int top, MapPosition position, int maxTileNbr) async {
+  Future<void> _produceLabel(_CurrentJob myJob, int left, int top, MapPosition position, int maxTileNbr, int order) async {
     if (myJob.aborted) return;
     Tile leftUpper = Tile(left, top, position.zoomlevel, position.indoorLevel);
     int range = rangeAt(position.zoomlevel);
     Tile rightLower = Tile(min(left + range - 1, maxTileNbr), min(top + range - 1, maxTileNbr), position.zoomlevel, position.indoorLevel);
     try {
-      RenderInfoCollection collection = await _cache.getOrProduce(leftUpper, rightLower, (Tile tile) async {
-        JobResult result = await renderer.retrieveLabels(JobRequest(leftUpper, rightLower));
-        if (result.renderInfo == null) throw Exception("No renderInfo for $tile from renderer ${renderer.getRenderKey()}");
-        return result.renderInfo!;
-      });
+      RenderInfoCollection collection;
+      while (true) {
+        try {
+          collection = await _cache.getOrProduce(leftUpper, rightLower, (Tile tile) async {
+            JobResult result = await renderer.retrieveLabels(
+              JobRequest.scheduled(leftUpper, rightLower: rightLower, isCancelled: () => myJob.aborted, order: order),
+            );
+            if (result.renderInfo == null) throw Exception("No renderInfo for $tile from renderer ${renderer.getRenderKey()}");
+            return result.renderInfo!;
+          });
+          break;
+        } on JobCancelledException {
+          if (myJob.aborted) return;
+          // an aborted job made the request and this job waited for the same block. The cache forgot the dropped
+          // request, so this time the block is produced for this job.
+        }
+      }
       // a label set made for this job later on (rotation, scaling) shares its labels, so it shows this block too
       if (myJob.labelSet.jobLabels.addAll({leftUpper: collection})) {
         _emitLabelSetBatched(myJob.labelSet);

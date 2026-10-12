@@ -72,7 +72,8 @@ class TileJobQueue extends ChangeNotifier {
       // do not recalculate for rotation or scaling as long as the prepared tiles cover the view
       TileSet tileSet = TileSet(center: _currentJob!.tileSet.center, mapPosition: position);
       tileSet.images.addEntries(_currentJob!.tileSet.images.entries);
-      _CurrentJob myJob = _CurrentJob(_currentJob!.tileDimension, tileSet);
+      // the replaced job goes on with the tiles it still waits for, aborting this job aborts that one too
+      _CurrentJob myJob = _CurrentJob(_currentJob!.tileDimension, tileSet, _currentJob!._abortFlag);
       _currentJob = myJob;
       _emitTileSetBatched(_currentJob!.tileSet);
       return;
@@ -157,8 +158,10 @@ class TileJobQueue extends ChangeNotifier {
       _emitTileSetBatched(tileSet);
     }
 
-    for (Tile tile in missingTiles) {
-      unawaited(_taskQueue.add(() => _producePicture(myJob, tileSet, tile)));
+    // the tiles are sorted from the center outwards, the reader gets them in this order
+    for (int order = 0; order < missingTiles.length; ++order) {
+      Tile tile = missingTiles[order];
+      unawaited(_taskQueue.add(() => _producePicture(myJob, tileSet, tile, order)));
     }
     unawaited(
       _taskQueue.add(() async {
@@ -168,27 +171,20 @@ class TileJobQueue extends ChangeNotifier {
     session.complete();
   }
 
-  Future<void> _producePicture(_CurrentJob myJob, TileSet tileSet, Tile tile) async {
+  Future<void> _producePicture(_CurrentJob myJob, TileSet tileSet, Tile tile, int order) async {
     if (myJob._abort) return;
     try {
-      TilePicture? picture = await _cache.getOrProduce(tile, (Tile tile) async {
+      TilePicture? picture;
+      while (true) {
         try {
-          JobResult result = await renderer.executeJob(JobRequest(tile));
-          if (result.picture == null) {
-            //return null;
-            // print("No picture for tile $tile");
-            return ImageHelper().createNoDataBitmap();
-          }
-          // make sure the picture is converted to an image because rendering (vector) pictures is usually slower than drawing images
-          result.picture!.convertPictureToImage();
-          return result.picture!;
-        } catch (error, stacktrace) {
-          // error in ecache abort() method. The completer should be checked for isComplete() before injecting an exception
-          print(error);
-          print(stacktrace);
-          rethrow;
+          picture = await _produce(myJob, tile, order);
+          break;
+        } on JobCancelledException {
+          if (myJob._abort) return;
+          // an aborted job made the request and this job waited for the same tile. The cache forgot the dropped
+          // request, so this time the tile is produced for this job.
         }
-      });
+      }
       if (myJob._abort) return;
       if (picture != null) {
         tileSet.images[tile] = picture;
@@ -200,6 +196,30 @@ class TileJobQueue extends ChangeNotifier {
     } on TimeoutException {
       // we aborted the job, ignore this error
     }
+  }
+
+  Future<TilePicture?> _produce(_CurrentJob myJob, Tile tile, int order) {
+    return _cache.getOrProduce(tile, (Tile tile) async {
+      try {
+        JobResult result = await renderer.executeJob(JobRequest.scheduled(tile, isCancelled: () => myJob._abort, order: order));
+        if (result.picture == null) {
+          //return null;
+          // print("No picture for tile $tile");
+          return ImageHelper().createNoDataBitmap();
+        }
+        // make sure the picture is converted to an image because rendering (vector) pictures is usually slower than drawing images
+        result.picture!.convertPictureToImage();
+        return result.picture!;
+      } on JobCancelledException {
+        // the job no longer needs the tile, not an error
+        rethrow;
+      } catch (error, stacktrace) {
+        // error in ecache abort() method. The completer should be checked for isComplete() before injecting an exception
+        print(error);
+        print(stacktrace);
+        rethrow;
+      }
+    });
   }
 
   /// Emit tile set with batching to reduce stream emissions
@@ -276,9 +296,18 @@ class _CurrentJob {
 
   bool _done = false;
 
-  bool _abort = false;
+  /// Shared with the job this job replaced when the map only rotated or scaled, see [TileJobQueue.setPosition].
+  final _AbortFlag _abortFlag;
 
-  _CurrentJob(this.tileDimension, this.tileSet);
+  _CurrentJob(this.tileDimension, this.tileSet, [_AbortFlag? abortFlag]) : _abortFlag = abortFlag ?? _AbortFlag();
 
-  void abort() => _abort = true;
+  bool get _abort => _abortFlag.aborted;
+
+  void abort() => _abortFlag.aborted = true;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+class _AbortFlag {
+  bool aborted = false;
 }
