@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +32,35 @@ class _CountingRenderer extends Renderer {
 
   @override
   String getRenderKey() => 'counting';
+
+  @override
+  bool supportLabels() => true;
+}
+
+/// Holds every request until [fail] fails them all, the way a reader isolate that is disposed under them does.
+class _GatedRenderer extends Renderer {
+  final List<Completer<JobResult>> pending = [];
+
+  Future<JobResult> _hold() {
+    Completer<JobResult> completer = Completer();
+    pending.add(completer);
+    return completer.future;
+  }
+
+  @override
+  Future<JobResult> executeJob(JobRequest jobRequest) => _hold();
+
+  @override
+  Future<JobResult> retrieveLabels(JobRequest jobRequest) => _hold();
+
+  void fail() {
+    for (Completer<JobResult> completer in pending) {
+      if (!completer.isCompleted) completer.completeError(StateError('isolate disposed'));
+    }
+  }
+
+  @override
+  String getRenderKey() => 'gated';
 
   @override
   bool supportLabels() => true;
@@ -76,6 +106,45 @@ void main() {
 
         cache.dispose();
         expect(shown.values.every(disposed), isTrue);
+        await mapModel.dispose();
+      });
+    });
+
+    // the renderer of a map is disposed after its caches, while tiles are still being rendered
+    testWidgets('tiles still being rendered when the cache is disposed fail quietly', (WidgetTester tester) async {
+      await tester.runAsync(() async {
+        _GatedRenderer renderer = _GatedRenderer();
+        TileCache cache = TileCache();
+        MapModel mapModel = MapModel(renderer: renderer);
+
+        TileJobQueue queue = TileJobQueue(mapModel: mapModel, renderer: renderer, cache: cache);
+        queue.setSize(width, height);
+        queue.setPosition(position);
+        await Future<void>.delayed(settle);
+        expect(renderer.pending, isNotEmpty);
+        queue.dispose();
+        cache.dispose();
+        renderer.fail();
+        await Future<void>.delayed(settle);
+        await mapModel.dispose();
+      });
+    });
+
+    testWidgets('tiles that fail after their view is gone fail quietly', (WidgetTester tester) async {
+      await tester.runAsync(() async {
+        _GatedRenderer renderer = _GatedRenderer();
+        TileCache cache = TileCache();
+        MapModel mapModel = MapModel(renderer: renderer);
+
+        TileJobQueue queue = TileJobQueue(mapModel: mapModel, renderer: renderer, cache: cache);
+        queue.setSize(width, height);
+        queue.setPosition(position);
+        await Future<void>.delayed(settle);
+        expect(renderer.pending, isNotEmpty);
+        queue.dispose();
+        renderer.fail();
+        await Future<void>.delayed(settle);
+        cache.dispose();
         await mapModel.dispose();
       });
     });
@@ -130,6 +199,48 @@ void main() {
         expect(second.labelSet.jobLabels.blockCount, retrieved);
         second.dispose();
 
+        cache.dispose();
+        await mapModel.dispose();
+      });
+    });
+
+    // #868 (twdcompass): the renderer of a map is disposed after its caches, while label blocks are still being
+    // retrieved; their failure used to escape as an unhandled error
+    testWidgets('labels still being retrieved when the cache is disposed fail quietly', (WidgetTester tester) async {
+      await tester.runAsync(() async {
+        _GatedRenderer renderer = _GatedRenderer();
+        MemoryLabelCache cache = MemoryLabelCache.create();
+        MapModel mapModel = MapModel(renderer: renderer);
+        mapModel.setPosition(position);
+
+        LabelJobQueue queue = LabelJobQueue(mapModel: mapModel, renderer: renderer, cache: cache);
+        queue.setSize(width, height);
+        queue.setPosition(position);
+        await Future<void>.delayed(settle);
+        expect(renderer.pending, isNotEmpty);
+        queue.dispose();
+        cache.dispose();
+        renderer.fail();
+        await Future<void>.delayed(settle);
+        await mapModel.dispose();
+      });
+    });
+
+    testWidgets('labels that fail after their view is gone fail quietly', (WidgetTester tester) async {
+      await tester.runAsync(() async {
+        _GatedRenderer renderer = _GatedRenderer();
+        MemoryLabelCache cache = MemoryLabelCache.create();
+        MapModel mapModel = MapModel(renderer: renderer);
+        mapModel.setPosition(position);
+
+        LabelJobQueue queue = LabelJobQueue(mapModel: mapModel, renderer: renderer, cache: cache);
+        queue.setSize(width, height);
+        queue.setPosition(position);
+        await Future<void>.delayed(settle);
+        expect(renderer.pending, isNotEmpty);
+        queue.dispose();
+        renderer.fail();
+        await Future<void>.delayed(settle);
         cache.dispose();
         await mapModel.dispose();
       });

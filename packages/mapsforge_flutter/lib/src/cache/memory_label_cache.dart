@@ -36,7 +36,10 @@ class MemoryLabelCache {
   }
 
   MemoryLabelCache._(int capacity) {
-    _cache = LruCache<Tile, RenderInfoCollection>(capacity: capacity, name: "MemoryLabelCache");
+    // With an onEvict, clearing or disposing the cache also aborts the blocks still being retrieved, as in [TileCache]:
+    // their waiters get a TimeoutException, which a job treats as cancelled, instead of whatever the renderer throws
+    // once it is disposed too (twdcompass #868: a reader isolate's "isolate disposed" escaped as an unhandled error).
+    _cache = LruCache<Tile, RenderInfoCollection>(onEvict: (_, _) {}, capacity: capacity, name: "MemoryLabelCache");
   }
 
   void dispose() {
