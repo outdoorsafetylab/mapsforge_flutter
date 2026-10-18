@@ -199,6 +199,10 @@ class TileJobQueue extends ChangeNotifier {
       _emitTileSetBatched(tileSet);
     } on TimeoutException {
       // we aborted the job, ignore this error
+    } catch (_) {
+      // nobody waits for a cancelled job, e.g. its view is gone and the renderer with it
+      if (myJob._abort) return;
+      rethrow;
     }
   }
 
