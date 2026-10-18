@@ -214,6 +214,10 @@ class LabelJobQueue extends ChangeNotifier {
       }
     } on TimeoutException {
       // job cancelled, ignore this error
+    } catch (_) {
+      // nobody waits for a cancelled job, e.g. its view is gone and the renderer with it
+      if (myJob.aborted) return;
+      rethrow;
     }
   }
 
