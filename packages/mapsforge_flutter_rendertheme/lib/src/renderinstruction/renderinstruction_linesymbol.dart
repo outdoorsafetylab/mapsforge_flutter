@@ -31,7 +31,9 @@ class RenderinstructionLinesymbol extends Renderinstruction with BaseSrcMixin, B
     setRepeatGap(REPEAT_GAP_DEFAULT);
     setRepeatStart(REPEAT_START_DEFAULT);
     setBitmapPercent(100);
-    setBitmapMinZoomLevel(MapsforgeSettingsMgr().strokeMinZoomlevelText);
+    // As [RenderinstructionSymbol]: Java mapsforge's LineSymbol scales its
+    // offset, never its bitmap (twdcompass#923).
+    setBitmapMinZoomLevel(65535);
   }
 
   @override

@@ -1,5 +1,4 @@
 import 'package:mapsforge_flutter_core/model.dart';
-import 'package:mapsforge_flutter_core/utils.dart';
 import 'package:mapsforge_flutter_rendertheme/model.dart';
 import 'package:mapsforge_flutter_rendertheme/rendertheme.dart';
 import 'package:mapsforge_flutter_rendertheme/src/renderinstruction/base_src_mixin.dart';
@@ -40,7 +39,10 @@ class RenderinstructionSymbol extends Renderinstruction with BaseSrcMixin, Bitma
   RenderinstructionSymbol(int level) {
     this.level = level;
     setBitmapPercent(100);
-    setBitmapMinZoomLevel(MapsforgeSettingsMgr().strokeMinZoomlevelText);
+    // Same size at every zoomlevel, as in Java mapsforge (whose Symbol
+    // does not scale; themes such as the Rudy map are drawn for it). Grown
+    // from zoomlevel 18 they covered the map (twdcompass#923).
+    setBitmapMinZoomLevel(65535);
   }
 
   /// Creates a zoom level specific copy of this symbol instruction.
