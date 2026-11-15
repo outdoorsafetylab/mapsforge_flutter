@@ -41,7 +41,7 @@ melos:
 
         ecache: ^2.3.0
 
-        xml: ^6.6.1
+        xml: ^7.0.1
 
       dev_dependencies:
 
