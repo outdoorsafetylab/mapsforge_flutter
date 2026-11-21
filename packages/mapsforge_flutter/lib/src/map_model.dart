@@ -9,11 +9,16 @@ import 'package:mapsforge_flutter_renderer/offline_renderer.dart';
 import 'package:mapsforge_flutter_rendertheme/model.dart';
 import 'package:rxdart/rxdart.dart';
 
+/// View state of one map: the current position, the renderers that draw it, and the streams for gestures and render changes.
+///
+/// A [MapModel] does not own its [Renderer]s. The same renderer, and the [Datastore] behind it, can be attached to several map models.
+/// [dispose] therefore does not call [Renderer.dispose]. Dispose the renderer where it was created, after every map model that uses it is gone.
 class MapModel extends ChangeNotifier {
   final List<Renderer> _renderers = [];
 
   MapPosition? _lastPosition;
 
+  /// Lowest and highest zoom level this map accepts.
   final ZoomlevelRange zoomlevelRange;
 
   /// Inform a listener about the last known position even if he was not listening at the time, hence using the [BehaviorSubject].
@@ -37,14 +42,21 @@ class MapModel extends ChangeNotifier {
   @Deprecated("Since 4.0.1. Use MapModel itself instead of MapModel.rotationNotifier for listening to map-changes")
   final ValueNotifier<double> rotationNotifier = ValueNotifier<double>(0.0);
 
+  /// Current rotation in degrees, or 0 when no position has been set. Normalized to -180..180 by [setPosition].
   double get rotationDeg => _lastPosition?.rotation ?? 0.0;
 
+  /// [renderer] is stored and not owned. See [dispose].
   MapModel({required Renderer renderer, this.zoomlevelRange = const ZoomlevelRange.standard()}) {
     _renderers.add(renderer);
   }
 
   bool _disposed = false;
 
+  /// Closes the position and gesture streams and disposes marker datastores registered with [registerMarkerDatastore].
+  ///
+  /// Renderers passed to the constructor or [addRenderer] are not disposed. A renderer may still serve another [MapModel],
+  /// and disposing it here would shut down its isolate while other maps, or tile jobs already in flight, still read from it.
+  /// Call [Renderer.dispose] separately once no map model uses that renderer anymore.
   @override
   Future<void> dispose() async {
     _disposed = true;
@@ -55,9 +67,6 @@ class MapModel extends ChangeNotifier {
     await _longTapSubject.close();
     await _doubleTapSubject.close();
     await _dragNdropSubject.close();
-    for (var renderer in _renderers) {
-      renderer.dispose();
-    }
     _renderers.clear();
     rotationNotifier.dispose();
     for (var datastore in List.of(_markerDatastores)) {
@@ -66,14 +75,18 @@ class MapModel extends ChangeNotifier {
     _markerDatastores.clear();
   }
 
+  /// Adds another renderer. The model does not take ownership; see [dispose].
   void addRenderer(Renderer renderer) {
     _renderers.add(renderer);
   }
 
+  /// Renderers attached to this map, in the order they were added. Not owned by this model.
   List<Renderer> get renderers => _renderers;
 
+  /// Renderers from [renderers] that produce a separate label layer.
   Iterable<Renderer> get labelRenderers => _renderers.where((test) => test.supportLabels());
 
+  /// Markers from the registered datastores that contain [event].
   List<Marker> getTappedMarkers(TapEvent event) {
     List<Marker> tappedMarkers = [];
     for (var datastore in _markerDatastores) {
@@ -82,6 +95,9 @@ class MapModel extends ChangeNotifier {
     return tappedMarkers;
   }
 
+  /// Stores [position], emits it on [positionStream], updates [rotationNotifier], and notifies listeners.
+  ///
+  /// Ignored after [dispose].
   void setPosition(MapPosition position) {
     // Late gesture or animation callbacks must not fail on the closed subjects.
     if (_disposed) return;
@@ -98,8 +114,10 @@ class MapModel extends ChangeNotifier {
     return deg;
   }
 
+  /// Last position passed to [setPosition], or null before the first call.
   MapPosition? get lastPosition => _lastPosition;
 
+  /// Emits every [setPosition], including the latest value for a listener that subscribes later.
   Stream<MapPosition> get positionStream => _positionSubject.stream;
 
   /// A stream which triggers an event if the user starts to move the map. This can be used to switch off automatic movements
@@ -117,12 +135,14 @@ class MapModel extends ChangeNotifier {
   /// entitled to handle the event anymore. This is currently being used to hide the context menu.
   Stream<TapEvent?> get doubleTapStream => _doubleTapSubject.stream;
 
+  /// Emits [dragNdrop] events for the start, move, cancel, and finish of a drag.
   Stream<DragNdropEvent> get dragNdropStream => _dragNdropSubject.stream;
 
   /// Listens to [RenderChangedEvent] events.
   /// @see [RenderChangedEvent]
   Stream<RenderChangedEvent> get renderChangedStream => _renderChangedSubject.stream;
 
+  /// Reports that the user started moving the map. Listeners use this to stop automatic movement. Ignored after [dispose].
   void manualMove(Object object) {
     if (_disposed) return;
     _manualMoveSubject.add(object);
@@ -134,16 +154,19 @@ class MapModel extends ChangeNotifier {
     _tapSubject.add(event);
   }
 
+  /// Sets or clears a long-tap. A null [event] means the listener should stop handling it, usually by hiding the context menu. Ignored after [dispose].
   void longTap(TapEvent? event) {
     if (_disposed) return;
     _longTapSubject.add(event);
   }
 
+  /// Sets or clears a double-tap. A null [event] means the listener should stop handling it, usually by hiding the context menu. Ignored after [dispose].
   void doubleTap(TapEvent? event) {
     if (_disposed) return;
     _doubleTapSubject.add(event);
   }
 
+  /// Reports one step of a drag-and-drop gesture. Ignored after [dispose].
   void dragNdrop(DragNdropEvent event) {
     if (_disposed) return;
     _dragNdropSubject.add(event);
@@ -155,24 +178,28 @@ class MapModel extends ChangeNotifier {
     _renderChangedSubject.add(event);
   }
 
+  /// Zooms in by one level around the current center. No effect at [ZoomlevelRange.zoomlevelMax] or before a position is set.
   void zoomIn() {
     if (_lastPosition!.zoomlevel == zoomlevelRange.zoomlevelMax) return;
     MapPosition newPosition = _lastPosition!.zoomIn();
     setPosition(newPosition);
   }
 
+  /// Zooms in by one level, keeping [latitude] and [longitude] fixed on screen. No effect at [ZoomlevelRange.zoomlevelMax].
   void zoomInAround(double latitude, double longitude) {
     if (_lastPosition!.zoomlevel == zoomlevelRange.zoomlevelMax) return;
     MapPosition newPosition = _lastPosition!.zoomInAround(latitude, longitude);
     setPosition(newPosition);
   }
 
+  /// Zooms out by one level around the current center. No effect at [ZoomlevelRange.zoomlevelMin].
   void zoomOut() {
     if (_lastPosition!.zoomlevel == zoomlevelRange.zoomlevelMin) return;
     MapPosition newPosition = _lastPosition!.zoomOut();
     setPosition(newPosition);
   }
 
+  /// Jumps to [zoomLevel], clamped to [zoomlevelRange], keeping the current center. No effect when the level does not change.
   void zoomTo(int zoomLevel) {
     zoomLevel = zoomlevelRange.ensureBounds(zoomLevel);
     if (zoomLevel == _lastPosition!.zoomlevel) return;
@@ -180,22 +207,26 @@ class MapModel extends ChangeNotifier {
     setPosition(newPosition);
   }
 
+  /// Jumps to [zoomLevel], clamped to [zoomlevelRange], keeping [latitude] and [longitude] fixed on screen.
   void zoomToAround(double latitude, double longitude, int zoomLevel) {
     zoomLevel = zoomlevelRange.ensureBounds(zoomLevel);
     MapPosition newPosition = _lastPosition!.zoomToAround(latitude, longitude, zoomLevel);
     setPosition(newPosition);
   }
 
+  /// Selects the next higher indoor level of the current position.
   void indoorLevelUp() {
     MapPosition newPosition = _lastPosition!.indoorLevelUp();
     setPosition(newPosition);
   }
 
+  /// Selects the next lower indoor level of the current position.
   void indoorLevelDown() {
     MapPosition newPosition = _lastPosition!.indoorLevelDown();
     setPosition(newPosition);
   }
 
+  /// Selects indoor [level] without changing the geographic position.
   void setIndoorLevel(int level) {
     MapPosition newPosition = _lastPosition!.withIndoorLevel(level);
     setPosition(newPosition);
@@ -215,44 +246,48 @@ class MapModel extends ChangeNotifier {
     setPosition(newPosition);
   }
 
-  /// Moves to a new latitude and longitude. There must already be a position set.
+  /// Moves the center to [latitude] and [longitude]. Requires a position to be set already.
   void moveTo(double latitude, double longitude) {
     MapPosition newPosition = _lastPosition!.moveTo(latitude, longitude);
     setPosition(newPosition);
   }
 
+  /// Sets the map rotation to [rotation] degrees clockwise.
   void rotateTo(double rotation) {
     MapPosition newPosition = _lastPosition!.rotateTo(rotation);
     setPosition(newPosition);
   }
 
+  /// Adds [rotationDelta] degrees clockwise to the current rotation.
   void rotateBy(double rotationDelta) {
     MapPosition newPosition = _lastPosition!.rotateBy(rotationDelta);
     setPosition(newPosition);
   }
 
-  /// Moves to a new latitude and longitude and rotates to a specific angle in degrees clockwise.
+  /// Moves the center to [latitude] and [longitude] and sets the rotation to [rotation] degrees clockwise.
   void moveRotateTo(double latitude, double longitude, double rotation) {
     MapPosition newPosition = _lastPosition!.moveRotateTo(latitude, longitude, rotation);
     setPosition(newPosition);
   }
 
-  /// Sets the center of the mapmodel to the given coordinates in mappixel. There must already be a position set.
+  /// Sets the center to absolute map pixels [x] and [y]. Requires a position to be set already.
   void setCenter(double x, double y) {
     MapPosition newPosition = _lastPosition!.setCenter(x, y);
     setPosition(newPosition);
   }
 
-  /// Moves the center of the map in relative pixel coordinates.
+  /// Shifts the center by [dx] and [dy] pixels.
   void moveCenter(double dx, double dy) {
     MapPosition newPosition = _lastPosition!.moveCenter(dx, dy);
     setPosition(newPosition);
   }
 
+  /// Registers [datastore] so [getTappedMarkers] can search it. [dispose] disposes every datastore still registered.
   void registerMarkerDatastore(MarkerDatastore datastore) {
     _markerDatastores.add(datastore);
   }
 
+  /// Removes [datastore] from this map. The caller keeps ownership and must dispose it.
   void unregisterMarkerDatastore(MarkerDatastore datastore) {
     _markerDatastores.remove(datastore);
   }

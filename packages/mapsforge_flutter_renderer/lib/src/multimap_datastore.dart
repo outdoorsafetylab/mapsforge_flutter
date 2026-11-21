@@ -39,6 +39,7 @@ class MultimapDatastore extends Datastore {
     for (var db in datastores) {
       db.dispose();
     }
+    datastores.clear();
   }
 
   /// adds another mapDataStore

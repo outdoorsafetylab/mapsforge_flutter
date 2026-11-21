@@ -33,11 +33,11 @@ class ParallelTaskQueue implements TaskQueue {
 
   @override
   void cancel() {
+    _isCancelled = true;
     for (final item in _nextCycle) {
       item.completer.completeError(QueueCancelledException(), StackTrace.current);
     }
     _nextCycle.clear();
-    _isCancelled = true;
   }
 
   @override
@@ -65,6 +65,7 @@ class ParallelTaskQueue implements TaskQueue {
     unawaited(
       item.execute().whenComplete(() {
         --_runningCount;
+        if (_isCancelled) return;
         unawaited(_process());
       }),
     );
