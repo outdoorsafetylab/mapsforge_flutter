@@ -52,7 +52,8 @@ mixin BaseSrcMixin {
       scale = Scale.ALL;
     } else if (value.contains("none")) {
       scale = Scale.NONE;
+    } else {
+      scale = Scale.STROKE;
     }
-    scale = Scale.STROKE;
   }
 }
