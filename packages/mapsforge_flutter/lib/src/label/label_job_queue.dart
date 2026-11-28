@@ -163,6 +163,10 @@ class LabelJobQueue extends ChangeNotifier {
       _emitLabelSetBatched(labelSet);
     } on TimeoutException {
       // job cancelled, ignore this error
+    } catch (_) {
+      // the job was aborted while the labels were produced, e.g. because the queue and the renderer were disposed
+      if (myJob._abort) return;
+      rethrow;
     }
   }
 
