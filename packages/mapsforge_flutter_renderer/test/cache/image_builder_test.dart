@@ -17,6 +17,23 @@ Uint8List _halfSvg(int viewBox) => Uint8List.fromList(
   ),
 );
 
+/// Top-left quarter opaque black, the rest empty: its edges show the scale
+/// on each axis.
+Uint8List _quarterSvg(int viewBox) => Uint8List.fromList(
+  utf8.encode(
+    '<svg width="100%" height="100%" viewBox="0 0 $viewBox $viewBox" '
+    'xmlns="http://www.w3.org/2000/svg">'
+    '<rect x="0" y="0" width="${viewBox / 2}" height="${viewBox / 2}" fill="#000000"/>'
+    '</svg>',
+  ),
+);
+
+Future<List<int>> _alphaColumn(SymbolImage symbol, int x) async {
+  final ui.Image image = symbol.expose();
+  final ByteData data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+  return [for (int y = 0; y < image.height; y++) data.getUint8((y * image.width + x) * 4 + 3)];
+}
+
 Future<List<int>> _alphaRow(SymbolImage symbol, int y) async {
   final ui.Image image = symbol.expose();
   final ByteData data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
@@ -43,12 +60,16 @@ void main() {
 
   testWidgets('a non-uniform target stretches each axis to its own size, still sharp', (tester) async {
     await tester.runAsync(() async {
-      final SymbolImage symbol = await builder.createSvgSymbol(_halfSvg(10), 44, 20);
+      final SymbolImage symbol = await builder.createSvgSymbol(_quarterSvg(10), 44, 20);
       expect(symbol.getWidth(), 44);
       expect(symbol.getHeight(), 20);
-      final List<int> alpha = await _alphaRow(symbol, 10);
-      expect(alpha.sublist(0, 22), everyElement(255));
-      expect(alpha.sublist(22), everyElement(0));
+      // The quarter is 22 px wide and 10 px tall: each axis has its own scale.
+      final List<int> row = await _alphaRow(symbol, 5);
+      expect(row.sublist(0, 22), everyElement(255));
+      expect(row.sublist(22), everyElement(0));
+      final List<int> column = await _alphaColumn(symbol, 11);
+      expect(column.sublist(0, 10), everyElement(255));
+      expect(column.sublist(10), everyElement(0));
       symbol.dispose();
     });
   });
