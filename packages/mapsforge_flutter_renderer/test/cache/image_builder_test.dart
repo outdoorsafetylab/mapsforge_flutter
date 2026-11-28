@@ -41,6 +41,18 @@ void main() {
     });
   });
 
+  testWidgets('a non-uniform target stretches each axis to its own size, still sharp', (tester) async {
+    await tester.runAsync(() async {
+      final SymbolImage symbol = await builder.createSvgSymbol(_halfSvg(10), 44, 20);
+      expect(symbol.getWidth(), 44);
+      expect(symbol.getHeight(), 20);
+      final List<int> alpha = await _alphaRow(symbol, 10);
+      expect(alpha.sublist(0, 22), everyElement(255));
+      expect(alpha.sublist(22), everyElement(0));
+      symbol.dispose();
+    });
+  });
+
   testWidgets('a large SVG is drawn straight at the target size too', (tester) async {
     await tester.runAsync(() async {
       final SymbolImage symbol = await builder.createSvgSymbol(_halfSvg(580), 40, 40);
